@@ -46,7 +46,8 @@ function createClient() {
     const published = [];
     const mqttClient = new MqttClient({
         onHandshake: () => {},
-        onData: () => {}
+        onData: () => {},
+        onReport: () => {}
     });
     mqttClient.client = {
         publish: (topic, message, options) => {
@@ -241,11 +242,11 @@ describe("Logger status from DATA packets", () => {
 
     it("keeps the last reboot time steady, but follows a real reboot", () => {
         const boot = Date.parse("2026-10-23T07:25:32Z") / 1000;
-        const first = LoggerMqtt.fromDataStatus({uptime_seconds: 957, clock: boot + 957}, boot + 957);
+        const first = LoggerMqtt.fromStatus({uptime_seconds: 957, clock: boot + 957}, boot + 957);
         // 31 s later the uptime counter is a second behind the clock
-        const next = LoggerMqtt.fromDataStatus({uptime_seconds: 987, clock: boot + 988}, boot + 988, first.lastReboot);
+        const next = LoggerMqtt.fromStatus({uptime_seconds: 987, clock: boot + 988}, boot + 988, first.lastReboot);
         // The logger rebooted 3 minutes later
-        const rebooted = LoggerMqtt.fromDataStatus({uptime_seconds: 5, clock: boot + 1200}, boot + 1200, next.lastReboot);
+        const rebooted = LoggerMqtt.fromStatus({uptime_seconds: 5, clock: boot + 1200}, boot + 1200, next.lastReboot);
 
         assert.equal(first.values.last_reboot, "2026-10-23T07:25:32Z");
         assert.equal(next.values.last_reboot, "2026-10-23T07:25:32Z");
@@ -278,6 +279,74 @@ describe("Logger status from DATA packets", () => {
         const warn = t.mock.method(Logger, "warn", () => {});
         createClient().mqttClient.handleData(dataEvent("sun-5k-sg03lp1-reference.hex"));
 
+        assert.equal(warn.mock.callCount(), 0);
+    });
+});
+
+describe("REPORT packets", () => {
+    // Not captured from a real logger: built from dummycloud2's test values (see test/fixtures/report-synthetic.hex)
+    const REPORT_CLOCK = 1700001000; // base 1700000000 + offset 1000
+
+    /**
+     * @param {Buffer} payload
+     * @returns {{header: object, payload: Buffer}} the synthetic report's header with another payload
+     */
+    function withPayload(payload) {
+        return {header: packet("report-synthetic.hex").header, payload: payload};
+    }
+
+    it("decodes a REPORT packet like dummycloud2 does", () => {
+        const report = packet("report-synthetic.hex");
+
+        assert.equal(report.header.type, Protocol.MESSAGE_REQUEST_TYPES.REPORT);
+        assert.deepEqual(Protocol.parseReportPacketPayload(report), {
+            version: 1, uptime_seconds: 42, clock: REPORT_CLOCK, status: "01052c"
+        });
+    });
+
+    it("has no clock when the base time is 0, and nothing when the payload is too short", () => {
+        const payload = Buffer.from(packet("report-synthetic.hex").payload);
+        payload.writeUInt32LE(0, 9);
+
+        assert.equal(Protocol.parseReportPacketPayload(withPayload(payload)).clock, null);
+        assert.equal(Protocol.parseReportPacketPayload(withPayload(payload.subarray(0, 15))), null);
+    });
+
+    it("publishes the logger's uptime, last reboot and clock", (t) => {
+        t.mock.method(Date, "now", () => {
+            return REPORT_CLOCK * 1000 + 300;
+        });
+        const {mqttClient, published} = createClient();
+        const report = packet("report-synthetic.hex");
+        mqttClient.handleReport({header: report.header, payload: Protocol.parseReportPacketPayload(report)});
+
+        const state = Object.fromEntries(published.filter(m => {
+            return m.topic.startsWith("deye-dummycloud/");
+        }).map(m => {
+            return [m.topic, m.message];
+        }));
+        assert.deepEqual(state, {
+            "deye-dummycloud/2740963018/logger/uptime_seconds": "42",
+            "deye-dummycloud/2740963018/logger/last_reboot": "2023-11-14T22:29:18Z",
+            "deye-dummycloud/2740963018/logger/report_time": "2023-11-14T22:30:00Z",
+            "deye-dummycloud/2740963018/logger/clock_offset_seconds": "0"
+        });
+        assert.equal(published.filter(m => {
+            return m.topic.startsWith("homeassistant/");
+        }).length, 4);
+    });
+
+    it("publishes only the uptime when the report has no clock", (t) => {
+        const warn = t.mock.method(Logger, "warn", () => {});
+        const {mqttClient, published} = createClient();
+        mqttClient.handleReport({header: packet("report-synthetic.hex").header, payload: {uptime_seconds: 42, clock: null}});
+
+        assert.deepEqual(published.map(m => {
+            return m.topic;
+        }), [
+            "homeassistant/sensor/deye_dummycloud_2740963018/2740963018_logger_uptime_seconds/config",
+            "deye-dummycloud/2740963018/logger/uptime_seconds"
+        ]);
         assert.equal(warn.mock.callCount(), 0);
     });
 });

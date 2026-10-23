@@ -156,6 +156,18 @@ class DummyCloud {
                     }
                     break;
                 }
+                case Protocol.MESSAGE_REQUEST_TYPES.REPORT: {
+                    const report = Protocol.parseReportPacketPayload(packet);
+
+                    if (report) {
+                        Logger.debug(`REPORT packet data from ${remoteAddress}`, report, "payload", packet.payload.toString("hex"));
+                        this.emitReport({
+                            header: packet.header,
+                            payload: report
+                        });
+                    }
+                    break;
+                }
                 default: {
                     // HEARTBEAT and unknown types carry nothing to decode
                 }
@@ -214,6 +226,14 @@ class DummyCloud {
         this.eventEmitter.on(DummyCloud.PACKET_EVENTS.Data, listener);
     }
 
+    emitReport(data) {
+        this.eventEmitter.emit(DummyCloud.PACKET_EVENTS.Report, data);
+    }
+
+    onReport(listener) {
+        this.eventEmitter.on(DummyCloud.PACKET_EVENTS.Report, listener);
+    }
+
     emitHandshake(data) {
         this.eventEmitter.emit(DummyCloud.PACKET_EVENTS.Handshake, data);
     }
@@ -225,7 +245,8 @@ class DummyCloud {
 
 DummyCloud.PACKET_EVENTS = {
     Data: "Data",
-    Handshake: "Handshake"
+    Handshake: "Handshake",
+    Report: "Report"
 };
 
 

@@ -232,6 +232,34 @@ class Protocol {
     }
 
     /**
+     * A REPORT packet (type 0x48), as decoded by dummycloud2, which saw them from microinverter loggers (the LSW-3
+     * hasn't sent one so far). Same fields as the start of a DATA payload, without its two schema bytes:
+     * 0 version, 1-4 offset into the base time (LE), 5-8 uptime in seconds, 9-12 base time (Unix seconds),
+     * 13-15 unknown status bytes.
+     *
+     * @param {{header: object, payload: Buffer}} packet
+     * @returns {{version: number, uptime_seconds: number, clock: number|null, status: string}|null} clock in Unix
+     *          seconds, null when the base time is 0; null when the payload is too short
+     */
+    static parseReportPacketPayload(packet) {
+        const payload = packet.payload;
+        if (payload.length < 16) {
+            Logger.debug(`Discarded REPORT packet: payload too short (${payload.length} bytes)`);
+
+            return null;
+        }
+
+        const base = payload.readUInt32LE(9);
+
+        return {
+            version: payload[0],
+            uptime_seconds: payload.readUInt32LE(5),
+            clock: base === 0 ? null : base + payload.readUInt32LE(1),
+            status: payload.subarray(13, 16).toString("hex")
+        };
+    }
+
+    /**
      * Builds the reply to a logger message in the format the real Solarman cloud uses
      * (captured 2026-10-23 from an LSW-3 logger, see CLAUDE.md).
      *
@@ -295,6 +323,7 @@ Protocol.MESSAGE_REQUEST_TYPES = {
     DATA: 0x42,
     WIFI: 0x43,
     HEARTBEAT: 0x47,
+    REPORT: 0x48,
 };
 
 Protocol.MESSAGE_RESPONSE_TYPES = {
@@ -302,6 +331,7 @@ Protocol.MESSAGE_RESPONSE_TYPES = {
     DATA: 0x12,
     // wifi info reply is 0x13?
     HEARTBEAT: 0x17,
+    REPORT: 0x18,
 };
 
 Protocol.DATA_PACKET_SCHEMAS = {

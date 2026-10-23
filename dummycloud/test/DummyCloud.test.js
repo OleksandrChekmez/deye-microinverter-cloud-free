@@ -18,6 +18,7 @@ function fixture(name) {
 const handshake = fixture("lsw3-handshake.hex");
 const data = fixture("sun-5k-sg03lp1-data.hex");
 const charging = fixture("sun-5k-sg03lp1-charging.hex");
+const report = fixture("report-synthetic.hex");
 
 /**
  * @param {Function} condition
@@ -122,5 +123,34 @@ describe("DummyCloud over TCP", () => {
             return f.endsWith("_handshake.hex");
         });
         assert.equal(fs.readFileSync(path.join(captureDir, saved), "utf8").trim(), handshake.toString("hex"));
+    });
+
+    it("decodes and answers REPORT packets", async () => {
+        const reports = [];
+        dummyCloud.onReport(event => {
+            reports.push(event);
+        });
+
+        const client = net.connect({host: "127.0.0.1", port: port});
+        const replies = [];
+        const replySplitter = new PacketSplitter();
+        client.on("data", chunk => {
+            replies.push(...replySplitter.push(chunk).packets);
+        });
+        client.write(report);
+
+        await waitFor(() => {
+            return replies.length === 1;
+        });
+        client.destroy();
+
+        assert.equal(replies[0][4], 0x18); // REPORT reply
+        assert.equal(reports.length, 1);
+        assert.equal(reports[0].payload.uptime_seconds, 42);
+        await waitFor(() => {
+            return fs.readdirSync(captureDir).some(f => {
+                return f.endsWith("_report.hex");
+            });
+        });
     });
 });

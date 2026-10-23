@@ -24,6 +24,9 @@ class MqttClient {
         this.dummyCloud.onData((data) => {
             this.handleData(data);
         });
+        this.dummyCloud.onReport((data) => {
+            this.handleReport(data);
+        });
     }
 
     initialize() {
@@ -93,6 +96,15 @@ class MqttClient {
      */
     getLoggerAddress(loggerSerial, meta) {
         return this.loggers[loggerSerial]?.ip_address ?? meta.remoteAddress;
+    }
+
+    /**
+     * @param {{header: object, payload: {uptime_seconds: number, clock: number|null}}} data
+     */
+    handleReport(data) {
+        const loggerSerial = data.header.loggerSerial.toString();
+
+        this.handleLoggerStatus(loggerSerial, `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`, data.payload);
     }
 
     handleData(data) {
@@ -182,15 +194,15 @@ class MqttClient {
     }
 
     /**
-     * Publishes the logger's uptime, last reboot and clock from the start of a DATA packet
+     * Publishes the logger's uptime, last reboot and clock from the start of a DATA packet, or from a REPORT packet
      *
      * @private
      * @param {string} loggerSerial
      * @param {string} baseTopic
-     * @param {{uptime_seconds: number, clock: number}} status
+     * @param {{uptime_seconds: number, clock: number|null}} status
      */
     handleLoggerStatus(loggerSerial, baseTopic, status) {
-        const {values, lastReboot} = LoggerMqtt.fromDataStatus(status, Date.now() / 1000, this.loggerReboots[loggerSerial]);
+        const {values, lastReboot} = LoggerMqtt.fromStatus(status, Date.now() / 1000, this.loggerReboots[loggerSerial]);
         this.loggerReboots[loggerSerial] = lastReboot;
 
         const autoconfKey = `${loggerSerial}_logger_status`;
@@ -202,7 +214,7 @@ class MqttClient {
 
         // Its clock comes from our replies, so a large offset means the time sync isn't working (at most once an hour)
         const offset = values.clock_offset_seconds;
-        if (Math.abs(offset) > LoggerMqtt.CLOCK_OFFSET_WARNING_SECONDS && !(Date.now() - (this.clockWarningTimes[loggerSerial] ?? 0) < 60 * 60 * 1000)) {
+        if (offset !== undefined && Math.abs(offset) > LoggerMqtt.CLOCK_OFFSET_WARNING_SECONDS && !(Date.now() - (this.clockWarningTimes[loggerSerial] ?? 0) < 60 * 60 * 1000)) {
             Logger.warn(`Logger ${loggerSerial}'s clock is ${offset} s off (it says ${values.report_time}). It may not accept the time in our replies.`);
             this.clockWarningTimes[loggerSerial] = Date.now();
         }

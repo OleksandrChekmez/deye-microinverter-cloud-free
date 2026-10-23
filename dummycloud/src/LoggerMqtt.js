@@ -2,11 +2,11 @@
  * MQTT state and Home Assistant discovery messages for the Wi-Fi logger itself (not the inverter):
  *   <TOPIC_PREFIX>/<loggerSerial>/logger/<key>   e.g. deye-dummycloud/2740963018/logger/ip_address
  * Same topics and unique IDs as dummycloud2. The sensors are diagnostics on the inverter's device in Home Assistant.
- * Two sources: the handshake when the logger connects (fromHandshake), and the logger's fields at the start of every
- * DATA packet (fromDataStatus, single-phase hybrids only so far).
+ * Sources: the handshake when the logger connects (fromHandshake), and the logger's uptime and clock (fromStatus)
+ * from the start of every DATA packet (single-phase hybrids only so far) or from REPORT packets.
  */
 
-// Values from DATA packets arrive every 30 s to 8 min; after that long without one, Home Assistant shows "unavailable"
+// Values from DATA or REPORT packets arrive every 30 s to 8 min; after that long without one, Home Assistant shows "unavailable"
 const EXPIRE_AFTER_SECONDS = 20 * 60;
 // The logger's clock comes from our replies; more than this off means it didn't get or accept them
 const CLOCK_OFFSET_WARNING_SECONDS = 5 * 60;
@@ -53,12 +53,18 @@ function fromHandshake(loggerSerial, handshake, remoteAddress) {
 }
 
 /**
- * @param {{uptime_seconds: number, clock: number}} status Protocol.parseDataPacketLoggerStatus()
+ * @param {{uptime_seconds: number, clock: number|null}} status Protocol.parseDataPacketLoggerStatus() or
+ *        parseReportPacketPayload(); without a clock, only the uptime is known
  * @param {number} nowSeconds Unix time when the packet arrived
  * @param {number} [previousReboot] lastReboot returned for this logger's previous packet
- * @returns {{values: object, lastReboot: number}} values by FIELDS key; lastReboot in Unix seconds, to pass back next time
+ * @returns {{values: object, lastReboot: number|undefined}} values by FIELDS key; lastReboot in Unix seconds, to pass
+ *          back next time
  */
-function fromDataStatus(status, nowSeconds, previousReboot) {
+function fromStatus(status, nowSeconds, previousReboot) {
+    if (status.clock === null || status.clock === undefined) {
+        return {values: {uptime_seconds: status.uptime_seconds}, lastReboot: previousReboot};
+    }
+
     let lastReboot = status.clock - status.uptime_seconds;
     if (previousReboot !== undefined && Math.abs(lastReboot - previousReboot) <= REBOOT_TOLERANCE_SECONDS) {
         lastReboot = previousReboot;
@@ -77,7 +83,7 @@ function fromDataStatus(status, nowSeconds, previousReboot) {
 
 /**
  * @param {string} baseTopic e.g. "deye-dummycloud/2740963018"
- * @param {object} values from fromHandshake() or fromDataStatus()
+ * @param {object} values from fromHandshake() or fromStatus()
  * @returns {Array<{topic: string, message: string, retain: boolean}>} only for known values
  */
 function getStateMessages(baseTopic, values) {
@@ -95,7 +101,7 @@ function getStateMessages(baseTopic, values) {
 /**
  * @param {string} baseTopic e.g. "deye-dummycloud/2740963018"
  * @param {string} loggerSerial
- * @param {object} values from fromHandshake() or fromDataStatus(); sensors are only announced for known values
+ * @param {object} values from fromHandshake() or fromStatus(); sensors are only announced for known values
  * @returns {Array<{topic: string, message: string, retain: boolean}>}
  */
 function getDiscoveryMessages(baseTopic, loggerSerial, values) {
@@ -153,8 +159,8 @@ function nonEmpty(value) {
 module.exports = {
     CLOCK_OFFSET_WARNING_SECONDS: CLOCK_OFFSET_WARNING_SECONDS,
     FIELDS: FIELDS,
-    fromDataStatus: fromDataStatus,
     fromHandshake: fromHandshake,
+    fromStatus: fromStatus,
     getDiscoveryMessages: getDiscoveryMessages,
     getStateMessages: getStateMessages
 };
