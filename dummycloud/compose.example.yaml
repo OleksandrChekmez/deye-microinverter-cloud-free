@@ -18,6 +18,9 @@ services:
       # Only needed if the broker requires a login
       # MQTT_USERNAME: example-user
       # MQTT_PASSWORD: example-password
+      # Optional, hybrid inverters: set the inverter's clock (via the logger's port 8899) when it's more than 30 s off.
+      # Needs TZ. Writes to the inverter's time registers.
+      # INVERTER_TIME_SYNC: "true"
       # Optional: save every received packet as a .hex file in the "captures" folder
       # CAPTURE_DIR: /app/captures
       # Diagnostic only: copy all logger traffic to another server (e.g. the real Solarman cloud) and log its

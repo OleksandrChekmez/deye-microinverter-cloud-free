@@ -72,6 +72,9 @@ class HomeAssistantApp {
         if (options.capture_packets) {
             env.CAPTURE_DIR = HomeAssistantApp.CAPTURE_DIR;
         }
+        if (options.sync_inverter_time) {
+            env.INVERTER_TIME_SYNC = "true";
+        }
         if (options.forward_to) {
             env.FORWARD_TO = options.forward_to;
         }

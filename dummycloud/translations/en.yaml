@@ -17,6 +17,9 @@ configuration:
   capture_packets:
     name: Capture packets
     description: "For development: saves every received packet as a .hex file in /share/deye-dummycloud/captures."
+  sync_inverter_time:
+    name: Keep the inverter clock right
+    description: "Hybrid inverters: sets the inverter's clock to Home Assistant's time when it's more than 30 s off, through the logger's port 8899. Writes to the inverter (only its clock)."
   forward_to:
     name: Forward to (diagnostic)
     description: "e.g. access1.solarmanpv.com:10000. Copies all logger traffic to that server and logs its replies. Sends your data there while set; leave empty normally."

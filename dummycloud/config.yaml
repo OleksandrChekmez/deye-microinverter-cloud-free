@@ -22,6 +22,7 @@ options:
   log_level: info
   mqtt_check_cert: true
   capture_packets: false
+  sync_inverter_time: false
 schema:
   log_level: list(trace|debug|info|warn|error)
   mqtt_broker_url: str?
@@ -29,4 +30,5 @@ schema:
   mqtt_password: password?
   mqtt_check_cert: bool
   capture_packets: bool
+  sync_inverter_time: bool
   forward_to: str?

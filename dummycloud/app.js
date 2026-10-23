@@ -1,5 +1,6 @@
 const DummyCloud = require("./src/DummyCloud");
 const HomeAssistantApp = require("./src/HomeAssistantApp");
+const InverterTimeSync = require("./src/InverterTimeSync");
 const Logger = require("./src/Logger");
 const MqttClient = require("./src/MqttClient");
 
@@ -16,6 +17,11 @@ async function main() {
 
     dummyCloud.initialize();
     mqttClient.initialize();
+
+    if (process.env.INVERTER_TIME_SYNC === "true") {
+        const timeSync = new InverterTimeSync(dummyCloud);
+        timeSync.initialize();
+    }
 }
 
 main().catch(err => {

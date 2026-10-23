@@ -17,6 +17,6 @@ Readings arrive every few minutes. The sensors show up under the MQTT integratio
 
 ## Notes
 
-- The replies to the logger carry Home Assistant's timezone, so the inverter's clock and daily counters stay right.
+- The replies to the logger carry Home Assistant's timezone, so the logger's clock is right. That time doesn't reach a hybrid inverter's own clock, which drifts over time (one was 11 minutes behind), shifting its daily counter reset and time-of-use schedule. Turn on **Keep the inverter clock right** to have the app set the inverter's clock when it's more than 30 s off. It does that through the logger's local port 8899 (no internet needed), never between 23:45 and 00:15, and at most every 15 minutes; the log shows each change.
 - The LSW-3 logger re-sends its last message about every 30 seconds and reconnects every few minutes. That's harmless: each reading is published only once.
 - Logs are in the app's **Log** tab. Set the log level to `debug` to see why a packet was skipped.
