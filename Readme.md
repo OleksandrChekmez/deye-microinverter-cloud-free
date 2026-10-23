@@ -5,42 +5,50 @@
 Solar power generation work best if there are no clouds anywhere to be seen :)
 <br/><br/>
 
-This repository aims to document how to use Deye microinverters entirely local only and cloud free.
-It consolidates the knowledge that at the time of writing was spread over hundreds of different posts, issues and comments.
+This repository documents how to run Deye inverters entirely local and cloud-free, and includes a replacement for the
+Solarman cloud: the [dummycloud](./dummycloud). You won't have to install any apps, create any accounts, or share an
+e-mail address or phone number.
 
-Furthermore, it also features a cloud replacement implementation so you won't have to install any apps or create any accounts.
-You also won't have to share any e-mail address or phone number.
+This is a fork of [Hypfer/deye-microinverter-cloud-free](https://github.com/Hypfer/deye-microinverter-cloud-free).
+On top of the original, it adds:
+
+- **Single-phase hybrid inverters** (tested with a Deye SUN-5K-SG03LP1-EU and its LSW-3 stick logger) in the dummycloud:
+  PV, battery, grid, load and all energy counters
+- The dummycloud as a **Home Assistant app**, with prebuilt images and automatic MQTT setup
+- **Logger diagnostics** in Home Assistant: IP and MAC address, firmware, uptime, last reboot, clock offset
+- Replies to the logger in the same format as the real Solarman cloud, and a more robust connection handling
 
 ## Devices
 
-So far, the following devices are known to work like this:
+Known to work cloud-free:
 
-- Deye SUN600G3-EU-230
-- Deye SUN-M80G3-EU-Q0
-- Deye SUN-M80G4-EU-Q0
+| Device | Type | Logger | Notes |
+|---|---|---|---|
+| Deye SUN600G3-EU-230 | Microinverter | built-in (MW3) | |
+| Deye SUN-M80G3-EU-Q0 | Microinverter | built-in (MW3) | |
+| Deye SUN-M80G4-EU-Q0 | Microinverter | built-in (MW3) | |
+| Deye SUN-5K-SG03LP1-EU | Single-phase hybrid, 48 V battery | LSW-3 stick, firmware `LSW3_15_FFFF_1.0.92R` | dummycloud tested in this fork |
 
-it should also be the same for other inverters of the same series including rebrands such as Bosswerk.<br/>
+Other inverters of the same series, including rebrands such as Bosswerk, should behave the same.
 If you have verified that it works with another device, feel free to extend this list.
 
 ## TL;DR
 
-Here are the main things you will want to know about these microinverters:
-
-- They have Wi-Fi
-- They can be connected to Wi-Fi networks via their webinterface
-- They can operate without an internet connection
-- They can operate without an account
-- They can be monitored and controlled via their local ModbusTCP interface
-- You can also completely replace the cloud with a local implementation: [dummycloud](./dummycloud)
+- The inverters' loggers have Wi-Fi and can be set up through their web interface
+- They work without an internet connection and without an account
+- They can be monitored and controlled through their local Modbus TCP interface (port 8899), for example with
+  [ha-solarman](https://github.com/davidrapan/ha-solarman) in Home Assistant
+- Or you can replace the cloud entirely with the [dummycloud](./dummycloud): the logger then pushes its data to it,
+  and it publishes everything to MQTT with Home Assistant autodiscovery. In Home Assistant, it installs as an app.
 
 **2024-08-20 Update**
 
-Deye has started rolling out firmware updates for the logger that block both ModbusTCP access and prevent the mock cloud
+Deye has started rolling out firmware updates for the logger that block both Modbus TCP access and prevent the mock cloud
 from working due to the introduction of TLS. Fortunately, for now it seems that newly bought inverters still come with older
 logger firmwares that work offline.
 Also equally fortunately, it seems that downgrading the firmware is possible as well.
 
-However, both of these things may change in the future.
+However, both of these things may change in the future. The LSW-3 firmware `LSW3_15_FFFF_1.0.92R` works offline (October 2026).
 
 ## Preamble
 
@@ -65,9 +73,10 @@ You don't want your home to burn down or anyone to be killed by a falling 1.5m²
 Electricity is dangerous. So are heavy things with a huge attack surface for wind.<br/>
 When in doubt, contact a local electrician. They know what they're doing and will help you.
 
-## Setup
+## Setup (microinverters)
 
 Now with that out of the way, we can talk about what to do.
+For hybrid inverters, see [Hybrid inverters](#hybrid-inverters) below.
 
 The first important thing to note is that these inverters will shut down if they don't sense at least 20V on at least one PV input.
 This means that you have to do all this during the day connected while connected to a PV panel.
@@ -124,6 +133,22 @@ If you run some advanced setup, you will know what to do.
 You can also try to DNS-block `access1.solarmanpv.com` and `access2.solarmanpv.com`, however it seems that the logger firmware might also use hardcoded IPs?
 Either way, just blocking internet access entirely should be much easier in most setups anyway and comes with no known downsides.
 
+## Hybrid inverters
+
+Hybrid inverters such as the SUN-5K-SG03LP1-EU talk to the cloud through a Solarman **LSW-3** Wi-Fi stick logger.
+It has the same kind of web interface as the microinverters' built-in logger, including the hidden
+`/config_hide.html` page described [below](#hidden-configuration-page).
+
+- Give the stick a fixed IP in your router and block its internet access, as for the microinverters.
+- To use the dummycloud, set only **Server A** in `/config_hide.html` to the machine running it, port `10000`, TCP.
+  Leave the **Optional Server Setting** (Server B) empty: pointing it at the same address made the logger deliver
+  readings much less often.
+- The LSW-3 re-sends its last message about every 30 seconds and reconnects every few minutes, even with replies
+  identical to the real cloud's. The dummycloud publishes each reading only once, so this doesn't affect the data.
+- Unlike the microinverters, a hybrid inverter runs day and night and keeps its own date and time, so its daily
+  counters reset fine without internet. Its clock does drift, though (one was 11 minutes behind). Set it on the
+  inverter's display, or with ha-solarman's "Date & Time" entity.
+
 ## Usage
 
 After connecting the inverter to your Wi-Fi network, securing it and blocking its internet access, all you need to do now is monitor and control it.
@@ -131,7 +156,7 @@ After connecting the inverter to your Wi-Fi network, securing it and blocking it
 For this there are different options.
 
 ### Local polling
-Most of the options rely on polling the local modbusTCP interface that uses the inverter logger serial number for authentication.
+Most of the options rely on polling the local Modbus TCP interface (port 8899) that uses the inverter logger serial number for authentication.
 
 To get this serial, simply look at the sticker on the device:
 
@@ -140,14 +165,20 @@ To get this serial, simply look at the sticker on the device:
 If you feel like doing something arcane and/or want to build something for that yourself, you can find the Modbus spec for these inverters in the complementary assets repo:
 [https://github.com/Hypfer/deye-microinverter-cloud-free-assets](https://github.com/Hypfer/deye-microinverter-cloud-free-assets).
 
-Note that with internet access blocked, the inverter never receives any time information.
+Note that with internet access blocked, a microinverter never receives any time information when polled.
 This breaks the `Yield today` counter as it will never properly reset unless you manually set the time on each boot using modbus register `22`, `23` and `24`.
+The dummycloud doesn't have this problem: its replies give the logger the current time.
 
 
 #### With Home Assistant
 
-With Home Assistant, the easiest way to get your inverter connected is by using [HACS](https://hacs.xyz/) to install the [Solarman](https://github.com/StephanJoubert/home_assistant_solarman) `custom_component`.
-Please refer to the project documentation on how to install and configure those.
+With Home Assistant, the easiest way to get your inverter connected is by using [HACS](https://hacs.xyz/) to install
+[ha-solarman](https://github.com/davidrapan/ha-solarman), an actively maintained fork of the original
+[Solarman](https://github.com/StephanJoubert/home_assistant_solarman) integration. It supports microinverters and hybrid inverters.
+Please refer to the project documentation on how to install and configure it.
+
+Note that the logger sends every Modbus reply to every client connected to port 8899, so don't let several tools poll
+the same logger at once.
 
 Home Assistant offers powerful tooling to store, visualize and process data right out of the box.
 
@@ -187,15 +218,21 @@ Keep in mind that this might change in the future so make sure to always check t
 If you don't want polling and/or are unhappy with having the inverter in a perpetual state of reconnection to the cloud,
 you can instead deploy the cloud replacement that can be found in the [dummycloud](./dummycloud) folder in this repository.
 
-This will make the inverter happy, provide it with the correct time for daily counters to work and push all the data to your MQTT broker.
-It will also autoconfigure entities for home assistant.
+The logger then sends its data to the dummycloud instead of the Solarman cloud. The dummycloud gives the logger the
+correct time, publishes all values to your MQTT broker, and sets up the entities in Home Assistant by itself.
 
 ![dummycloud_demo.png](./img/dummycloud_demo.png)
 
-It is however a bit more complicated than the polling approaches, as it requires you to understand how networks work
-and how to deploy a service somewhere. Nothing too arcane of course but if you don't know anything about linux, you might want to pass on this.
+It supports microinverters and single-phase hybrid inverters, and also publishes the logger's own details (IP and MAC
+address, firmware, and where the logger reports them, its uptime, last reboot and clock offset) as diagnostic sensors.
 
-For further information, check out the [dummycloud](./dummycloud) folder.
+You can run it:
+
+- **As a Home Assistant app**: add this repository in Home Assistant's app store, install "Deye Dummycloud", and
+  point the logger's Server A at Home Assistant. It connects to the Mosquitto broker app by itself.
+- **With Docker** anywhere else on your network, configured with environment variables.
+
+For the details, check out the [dummycloud](./dummycloud) folder.
 
 ## Misc
 
@@ -224,7 +261,7 @@ Apart from the modbus over tcp interface, these inverters also provide another i
 For that, for now you can use this tool: [https://github.com/s10l/deye-logger-at-cmd](https://github.com/s10l/deye-logger-at-cmd).
 
 Some firmware versions seem to respond to the `AT+H` command with a full list of commands.
-Mine doesn't, however a [user fortunately posted a full response](https://www.photovoltaikforum.com/thread/180129-deye-sun600-und-sun2000-erfahrungen/?postID=2846951#post2846951) which is the source for this table:
+Mine doesn't, however a [user fortunately posted a full response](https://www.photovoltaikforum.com/thread/180129-deye-sun600-und-sun2000-erfahrungen/?postID=2846951#post2846951) which is the source for this table (repeated entries left out):
 
 <details>
 <summary>Click here to show the AT command table</summary>
@@ -255,26 +292,8 @@ Mine doesn't, however a [user fortunately posted a full response](https://www.ph
 | AT+YZAPP                                  | Clear yz File in Flash                                  |
 | AT+YZAPSTAT                               | Clear yz File in Flash                                  |
 | AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
 | AT+YZWAKEYCTL                             | Clear yz File in Flash                                  |
-| AT+YZsize                                 | Clear yz File in Flash                                  |
 | AT+YZFLSHTEST=<password>,<devlist_status> |                                                         |
-| AT+YZFLSHTEST=<password>,<devlist_status> |                                                         |
-| AT+YZVER                                  | Clear yz File in Flash                                  |
-| AT+YZVER                                  | Clear yz File in Flash                                  |
-| AT+YZVER                                  | Clear yz File in Flash                                  |
-| AT+YZVER                                  | Clear yz File in Flash                                  |
-| AT+YZVER                                  | Clear yz File in Flash                                  |
-| AT+YZEXPFUN                               | Clear yz File in Flash                                  |
-| AT+YZEXPFUN                               | Clear yz File in Flash                                  |
-| AT+YZEXPFUN                               | Clear yz File in Flash                                  |
-| AT+YZEXPFUN                               | Clear yz File in Flash                                  |
-| AT+YZEXPFUN                               | Clear yz File in Flash                                  |
 | AT+YZEXPFUN                               | Clear yz File in Flash                                  |
 | AT+TMODE                                  | Set/Get the UART work mode.                             |
 | AT+ENTM                                   | Goto Through MOde.                                      |
@@ -355,8 +374,11 @@ Mine doesn't, however a [user fortunately posted a full response](https://www.ph
 </details>
 
 
-## Donate
+## Credits
 
-If this software and documentation effort brought value to you, there's the option to leave a small donation using the "Sponsor" button on top of the repo or by [clicking right here](https://github.com/sponsors/Hypfer).
+The original documentation and dummycloud are by [Hypfer](https://github.com/Hypfer). If this software and
+documentation effort brought value to you, there's the option to leave him a small donation using the "Sponsor"
+button on [the original repository](https://github.com/Hypfer/deye-microinverter-cloud-free) or by
+[clicking right here](https://github.com/sponsors/Hypfer).
 
 Thanks!
