@@ -2,7 +2,7 @@
 
 This is a small Node.js service that mocks the deye solarman cloud and publishes all the data to an MQTT broker.
 It also takes care of Home Assistant autodiscovery leading to things just working.
-Besides the inverter's values, it publishes the Wi-Fi logger's own details (IP and MAC address, firmware and hardware version) to `deye-dummycloud/<logger serial>/logger/...`, shown as diagnostic sensors.
+Besides the inverter's values, it publishes the Wi-Fi logger's own details (IP and MAC address, firmware and hardware version; for hybrid inverters also its uptime, last reboot and clock offset) to `deye-dummycloud/<logger serial>/logger/...`, shown as diagnostic sensors.
 
 ![dummycloud_demo.png](../img/dummycloud_demo.png)
 

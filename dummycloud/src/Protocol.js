@@ -105,7 +105,27 @@ class Protocol {
             return null;
         }
 
-        return HybridInverterSinglePhase.parse(packet.payload);
+        return {
+            ...HybridInverterSinglePhase.parse(packet.payload),
+            logger_status: Protocol.parseDataPacketLoggerStatus(packet.payload)
+        };
+    }
+
+    /**
+     * The logger's own fields at the start of a DATA payload. pysolarmanv5 calls them total working time, power on
+     * time and offset time; upstream's Kaitai schema has power_on_time at 7 for three-phase hybrids. Checked on an LSW-3
+     * (schema 0x07, 2026-10-23): power on time counts seconds since the logger booted, and offset time + total working
+     * time is the logger's clock (Unix time), which matched the capture time to the second.
+     * For microinverters (schema 0x08) these bytes are unverified, so they aren't decoded there.
+     *
+     * @param {Buffer} payload
+     * @returns {{uptime_seconds: number, clock: number}} clock in Unix seconds
+     */
+    static parseDataPacketLoggerStatus(payload) {
+        return {
+            uptime_seconds: payload.readUInt32LE(7),
+            clock: payload.readUInt32LE(11) + payload.readUInt32LE(3)
+        };
     }
 
     static parseDataPacketMicroinverterPayload(packet) {

@@ -24,6 +24,14 @@ function dataEvent(name) {
 }
 
 /**
+ * @param {{topic: string}} message
+ * @returns {boolean} whether it is about the logger (see LoggerMqtt.test.js) rather than the inverter
+ */
+function isLoggerMessage(message) {
+    return message.topic.includes("/logger/") || message.topic.includes("_logger_");
+}
+
+/**
  * @returns {{mqttClient: MqttClient, published: Array<{topic: string, message: string, retain: boolean}>}}
  */
 function createClient() {
@@ -47,10 +55,10 @@ describe("MqttClient with a single-phase hybrid inverter", () => {
         mqttClient.handleData(dataEvent("sun-5k-sg03lp1-reference.hex"));
 
         const discovery = published.filter(m => {
-            return m.topic.startsWith("homeassistant/");
+            return m.topic.startsWith("homeassistant/") && !isLoggerMessage(m);
         });
         const state = published.filter(m => {
-            return m.topic.startsWith("deye-dummycloud/");
+            return m.topic.startsWith("deye-dummycloud/") && !isLoggerMessage(m);
         });
         assert.equal(discovery.length, FIELD_COUNT);
         assert.equal(state.length, FIELD_COUNT);
@@ -111,18 +119,23 @@ describe("MqttClient with a single-phase hybrid inverter", () => {
 
     it("publishes each reading only once, and discovery only on the first", () => {
         const {mqttClient, published} = createClient();
+        const inverterMessages = () => {
+            return published.filter(m => {
+                return !isLoggerMessage(m);
+            });
+        };
 
         mqttClient.handleData(dataEvent("sun-5k-sg03lp1-reference.hex"));
-        assert.equal(published.length, 2 * FIELD_COUNT);
+        assert.equal(inverterMessages().length, 2 * FIELD_COUNT);
 
         // The logger repeats the same reading
         mqttClient.handleData(dataEvent("sun-5k-sg03lp1-reference.hex"));
-        assert.equal(published.length, 2 * FIELD_COUNT);
+        assert.equal(inverterMessages().length, 2 * FIELD_COUNT);
 
         // A new reading: state only
         mqttClient.handleData(dataEvent("sun-5k-sg03lp1-charging.hex"));
-        assert.equal(published.length, 3 * FIELD_COUNT);
-        assert.ok(published.slice(2 * FIELD_COUNT).every(m => {
+        assert.equal(inverterMessages().length, 3 * FIELD_COUNT);
+        assert.ok(inverterMessages().slice(2 * FIELD_COUNT).every(m => {
             return m.topic.startsWith("deye-dummycloud/");
         }));
     });

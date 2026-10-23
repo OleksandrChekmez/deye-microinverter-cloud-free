@@ -15,6 +15,8 @@ class MqttClient {
         this.autoconfTimestamps = {};
         this.lastReadingTimes = {}; // by logger serial
         this.loggers = {}; // what the last handshake said about each logger, by serial (see LoggerMqtt)
+        this.loggerReboots = {}; // each logger's last boot time (Unix seconds), by serial
+        this.clockWarningTimes = {}; // when a wrong logger clock was last logged, by serial
 
         this.dummyCloud.onHandshake((data) => {
             this.handleHandshake(data);
@@ -155,6 +157,11 @@ class MqttClient {
         const loggerSerial = data.header.loggerSerial.toString();
         const baseTopic = `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`;
 
+        // Before the repeat check: a repeated reading still brings the logger's current uptime and clock
+        if (data.payload.logger_status) {
+            this.handleLoggerStatus(loggerSerial, baseTopic, data.payload.logger_status);
+        }
+
         // The logger sends every reading several times; publish each one only once
         if (this.lastReadingTimes[loggerSerial] === data.payload.inverter_time) {
             Logger.debug(`Skipped repeated reading from ${data.payload.inverter_time} (logger ${loggerSerial})`);
@@ -172,6 +179,33 @@ class MqttClient {
 
         this.publishAll(HybridInverterSinglePhaseMqtt.getStateMessages(baseTopic, data.payload));
         Logger.debug(`Published reading from ${data.payload.inverter_time} (logger ${loggerSerial})`);
+    }
+
+    /**
+     * Publishes the logger's uptime, last reboot and clock from the start of a DATA packet
+     *
+     * @private
+     * @param {string} loggerSerial
+     * @param {string} baseTopic
+     * @param {{uptime_seconds: number, clock: number}} status
+     */
+    handleLoggerStatus(loggerSerial, baseTopic, status) {
+        const {values, lastReboot} = LoggerMqtt.fromDataStatus(status, Date.now() / 1000, this.loggerReboots[loggerSerial]);
+        this.loggerReboots[loggerSerial] = lastReboot;
+
+        const autoconfKey = `${loggerSerial}_logger_status`;
+        if (this.isAutoconfDue(autoconfKey)) {
+            this.publishAll(LoggerMqtt.getDiscoveryMessages(baseTopic, loggerSerial, values));
+            this.autoconfTimestamps[autoconfKey] = Date.now();
+        }
+        this.publishAll(LoggerMqtt.getStateMessages(baseTopic, values));
+
+        // Its clock comes from our replies, so a large offset means the time sync isn't working (at most once an hour)
+        const offset = values.clock_offset_seconds;
+        if (Math.abs(offset) > LoggerMqtt.CLOCK_OFFSET_WARNING_SECONDS && !(Date.now() - (this.clockWarningTimes[loggerSerial] ?? 0) < 60 * 60 * 1000)) {
+            Logger.warn(`Logger ${loggerSerial}'s clock is ${offset} s off (it says ${values.report_time}). It may not accept the time in our replies.`);
+            this.clockWarningTimes[loggerSerial] = Date.now();
+        }
     }
 
     /**

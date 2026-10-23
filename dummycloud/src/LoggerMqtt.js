@@ -2,7 +2,16 @@
  * MQTT state and Home Assistant discovery messages for the Wi-Fi logger itself (not the inverter):
  *   <TOPIC_PREFIX>/<loggerSerial>/logger/<key>   e.g. deye-dummycloud/2740963018/logger/ip_address
  * Same topics and unique IDs as dummycloud2. The sensors are diagnostics on the inverter's device in Home Assistant.
+ * Two sources: the handshake when the logger connects (fromHandshake), and the logger's fields at the start of every
+ * DATA packet (fromDataStatus, single-phase hybrids only so far).
  */
+
+// Values from DATA packets arrive every 30 s to 8 min; after that long without one, Home Assistant shows "unavailable"
+const EXPIRE_AFTER_SECONDS = 20 * 60;
+// The logger's clock comes from our replies; more than this off means it didn't get or accept them
+const CLOCK_OFFSET_WARNING_SECONDS = 5 * 60;
+// Uptime and clock tick separately, so the computed boot time can move by a second between packets
+const REBOOT_TOLERANCE_SECONDS = 60;
 
 const FIELDS = Object.freeze([
     {key: "serial_number", name: "Logger Serial Number", icon: "mdi:identifier"},
@@ -10,6 +19,20 @@ const FIELDS = Object.freeze([
     {key: "mac_address", name: "Logger MAC Address", icon: "mdi:network-outline"},
     {key: "firmware_version", name: "Logger Firmware Version", icon: "mdi:chip"},
     {key: "hardware_version", name: "Logger Hardware Version", icon: "mdi:chip"},
+    {
+        key: "uptime_seconds", name: "Logger Uptime", icon: "mdi:timer-outline", expires: true,
+        config: {unit_of_measurement: "s", device_class: "duration", state_class: "measurement", suggested_unit_of_measurement: "h"}
+    },
+    {key: "last_reboot", name: "Logger Last Reboot", icon: "mdi:restart", config: {device_class: "timestamp"}},
+    {
+        // The logger's clock when it sent the packet; Clock Offset says the same more readably
+        key: "report_time", name: "Logger Report Time", icon: "mdi:clock-outline", expires: true,
+        config: {device_class: "timestamp", enabled_by_default: false}
+    },
+    {
+        key: "clock_offset_seconds", name: "Logger Clock Offset", icon: "mdi:clock-alert-outline", expires: true,
+        config: {unit_of_measurement: "s", state_class: "measurement"}
+    },
 ]);
 
 /**
@@ -30,8 +53,31 @@ function fromHandshake(loggerSerial, handshake, remoteAddress) {
 }
 
 /**
+ * @param {{uptime_seconds: number, clock: number}} status Protocol.parseDataPacketLoggerStatus()
+ * @param {number} nowSeconds Unix time when the packet arrived
+ * @param {number} [previousReboot] lastReboot returned for this logger's previous packet
+ * @returns {{values: object, lastReboot: number}} values by FIELDS key; lastReboot in Unix seconds, to pass back next time
+ */
+function fromDataStatus(status, nowSeconds, previousReboot) {
+    let lastReboot = status.clock - status.uptime_seconds;
+    if (previousReboot !== undefined && Math.abs(lastReboot - previousReboot) <= REBOOT_TOLERANCE_SECONDS) {
+        lastReboot = previousReboot;
+    }
+
+    return {
+        values: {
+            uptime_seconds: status.uptime_seconds,
+            last_reboot: toIsoTime(lastReboot),
+            report_time: toIsoTime(status.clock),
+            clock_offset_seconds: Math.round(status.clock - nowSeconds)
+        },
+        lastReboot: lastReboot
+    };
+}
+
+/**
  * @param {string} baseTopic e.g. "deye-dummycloud/2740963018"
- * @param {object} values from fromHandshake()
+ * @param {object} values from fromHandshake() or fromDataStatus()
  * @returns {Array<{topic: string, message: string, retain: boolean}>} only for known values
  */
 function getStateMessages(baseTopic, values) {
@@ -41,7 +87,7 @@ function getStateMessages(baseTopic, values) {
         return {
             topic: `${baseTopic}/logger/${field.key}`,
             message: String(values[field.key]),
-            retain: true // they rarely change, and only arrive when the logger connects
+            retain: true // the handshake values only arrive when the logger connects; keep them across HA restarts
         };
     });
 }
@@ -49,7 +95,7 @@ function getStateMessages(baseTopic, values) {
 /**
  * @param {string} baseTopic e.g. "deye-dummycloud/2740963018"
  * @param {string} loggerSerial
- * @param {object} values from fromHandshake(); sensors are only announced for known values
+ * @param {object} values from fromHandshake() or fromDataStatus(); sensors are only announced for known values
  * @returns {Array<{topic: string, message: string, retain: boolean}>}
  */
 function getDiscoveryMessages(baseTopic, loggerSerial, values) {
@@ -64,21 +110,34 @@ function getDiscoveryMessages(baseTopic, loggerSerial, values) {
         return values[field.key] !== null && values[field.key] !== undefined;
     }).map(field => {
         const id = `deye_dummycloud_${loggerSerial}_logger_${field.key}`;
+        const config = {
+            "state_topic": `${baseTopic}/logger/${field.key}`,
+            "name": field.name,
+            "object_id": id,
+            "unique_id": id,
+            "icon": field.icon,
+            "entity_category": "diagnostic",
+            ...field.config,
+            "device": device
+        };
+        if (field.expires) {
+            config["expire_after"] = EXPIRE_AFTER_SECONDS;
+        }
 
         return {
             topic: `homeassistant/sensor/deye_dummycloud_${loggerSerial}/${loggerSerial}_logger_${field.key}/config`,
-            message: JSON.stringify({
-                "state_topic": `${baseTopic}/logger/${field.key}`,
-                "name": field.name,
-                "object_id": id,
-                "unique_id": id,
-                "icon": field.icon,
-                "entity_category": "diagnostic",
-                "device": device
-            }),
+            message: JSON.stringify(config),
             retain: true
         };
     });
+}
+
+/**
+ * @param {number} seconds Unix time
+ * @returns {string} e.g. "2026-10-23T07:25:32Z", as Home Assistant's timestamp sensors expect
+ */
+function toIsoTime(seconds) {
+    return new Date(seconds * 1000).toISOString().replace(".000Z", "Z");
 }
 
 /**
@@ -92,7 +151,9 @@ function nonEmpty(value) {
 }
 
 module.exports = {
+    CLOCK_OFFSET_WARNING_SECONDS: CLOCK_OFFSET_WARNING_SECONDS,
     FIELDS: FIELDS,
+    fromDataStatus: fromDataStatus,
     fromHandshake: fromHandshake,
     getDiscoveryMessages: getDiscoveryMessages,
     getStateMessages: getStateMessages
