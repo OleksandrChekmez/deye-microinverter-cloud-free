@@ -16,7 +16,6 @@ The dummycloud is configured using environment variables to be container-friendl
 - `MQTT_PASSWORD` (no default, optional.)
 - `MQTT_CHECK_CERT` set to `false` for using `mqtts` with self signed certificate (defaults to `true`)
 - `TZ` your timezone, e.g. `Europe/Berlin` (optional). Replies to the logger include its UTC offset, as the Solarman cloud's do.
-- `INVERTER_TIME_SYNC` set to `true` to keep a hybrid inverter's clock right (optional, needs `TZ`). Our replies only set the logger's clock, and the inverter's own clock drifts, which shifts its daily counter reset and time-of-use schedule. When a reading's timestamp is more than 30 s off, the dummycloud reads the inverter's clock (registers 22–24) through the logger's local port 8899 and sets it to the current time. It doesn't touch the clock between 23:45 and 00:15, and tries at most every 15 minutes.
 - `CAPTURE_DIR` (optional, for development) saves every received packet as a `.hex` file in this folder
 - `FORWARD_TO` (optional, diagnostic only) e.g. `access1.solarmanpv.com:10000`: copies all logger traffic to that server and logs its replies, which are never passed on to the logger. While it's set, your data is sent to that server.
 

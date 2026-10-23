@@ -58,7 +58,6 @@ describe("HomeAssistantApp", () => {
         assert.equal(env.MQTT_CHECK_CERT, undefined);
         assert.equal(env.CAPTURE_DIR, undefined);
         assert.equal(env.FORWARD_TO, undefined);
-        assert.equal(env.INVERTER_TIME_SYNC, undefined);
     });
 
     it("prefers a broker URL from the options and doesn't ask the Supervisor", async () => {
@@ -71,7 +70,6 @@ describe("HomeAssistantApp", () => {
             mqtt_password: "pw",
             mqtt_check_cert: false,
             capture_packets: true,
-            sync_inverter_time: true,
             forward_to: "access1.solarmanpv.com:10000"
         });
 
@@ -86,7 +84,6 @@ describe("HomeAssistantApp", () => {
             MQTT_PASSWORD: "pw",
             MQTT_CHECK_CERT: "false",
             CAPTURE_DIR: "/share/deye-dummycloud/captures",
-            INVERTER_TIME_SYNC: "true",
             FORWARD_TO: "access1.solarmanpv.com:10000"
         });
     });
