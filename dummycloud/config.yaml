@@ -3,7 +3,7 @@
 # Keep "version" equal to package.json's version: a new version is what makes Home Assistant offer the update, and what
 # makes the workflow publish a new image.
 name: Deye Dummycloud
-version: "1.1.0-fork.13"
+version: "1.1.0-fork.14"
 slug: deye_dummycloud
 description: Replaces the Solarman cloud for Deye inverter loggers and publishes their data to MQTT, with Home Assistant discovery
 url: https://github.com/OleksandrChekmez/deye-microinverter-cloud-free
