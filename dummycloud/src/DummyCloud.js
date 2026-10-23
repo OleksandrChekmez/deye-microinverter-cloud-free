@@ -1,16 +1,27 @@
 const EventEmitter = require("events").EventEmitter;
+const fs = require("fs");
 const Logger = require("./Logger");
 const net = require("net");
 const packageJson = require("../package.json");
+const path = require("path");
 const Protocol = require("./Protocol");
+const {toHexByte} = require("./util");
 
 class DummyCloud {
     constructor() {
         this.eventEmitter = new EventEmitter();
         this.server = new net.Server();
+
+        // Optional: folder to save every DATA packet to, one hex file per packet
+        this.captureDir = process.env.CAPTURE_DIR;
     }
 
     initialize() {
+        if (this.captureDir) {
+            fs.mkdirSync(this.captureDir, {recursive: true});
+            Logger.info(`Saving DATA packets to ${this.captureDir}`);
+        }
+
         this.server.listen(
             {
                 port: DummyCloud.PORT,
@@ -74,14 +85,16 @@ class DummyCloud {
                         break;
                     }
                     case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
-                        // Returns null for packets it can't decode, and logs the reason itself
-                        const data = Protocol.parseDataPacketPayload(packet);
+                        this.capturePacket(data, packet);
 
-                        if (data) {
-                            Logger.debug(`DATA packet data from ${remoteAddress}`, data);
+                        // Returns null for packets it can't decode, and logs the reason itself
+                        const decoded = Protocol.parseDataPacketPayload(packet);
+
+                        if (decoded) {
+                            Logger.debug(`DATA packet data from ${remoteAddress}`, decoded);
                             this.emitData({
                                 header: packet.header,
-                                payload: data,
+                                payload: decoded,
                                 meta: {
                                     remoteAddress: remoteAddress
                                 }
@@ -117,6 +130,27 @@ class DummyCloud {
 
         socket.on("error", function(err) {
             Logger.error(`Error on dummycloud socket for ${remoteAddress}`, err);
+        });
+    }
+
+    /**
+     * Saves the raw packet as a hex file in CAPTURE_DIR (if set), in the same format as test/fixtures.
+     *
+     * @private
+     * @param {Buffer} raw
+     * @param {{header: object, payload: Buffer}} packet
+     */
+    capturePacket(raw, packet) {
+        if (!this.captureDir) {
+            return;
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const schema = toHexByte(packet.payload[1]).slice(2);
+        const fileName = `${packet.header.loggerSerial}_${timestamp}_schema${schema}.hex`;
+
+        fs.promises.writeFile(path.join(this.captureDir, fileName), raw.toString("hex") + "\n").catch(err => {
+            Logger.error(`Failed to save captured packet ${fileName}`, err);
         });
     }
 
