@@ -3,7 +3,8 @@
  *   <TOPIC_PREFIX>/<loggerSerial>/logger/<key>   e.g. deye-dummycloud/2740963018/logger/ip_address
  * Same topics and unique IDs as dummycloud2. The sensors are diagnostics on the inverter's device in Home Assistant.
  * Sources: the handshake when the logger connects (fromHandshake), and the logger's uptime and clock (fromStatus)
- * from the start of every DATA packet (single-phase hybrids only so far) or from REPORT packets.
+ * from the start of every DATA packet (single-phase hybrids only so far) or from REPORT packets, and the Wi-Fi network
+ * and signal (fromWifi) from WIFI packets.
  */
 
 // Values from DATA or REPORT packets arrive every 30 s to 8 min; after that long without one, Home Assistant shows "unavailable"
@@ -19,6 +20,12 @@ const FIELDS = Object.freeze([
     {key: "mac_address", name: "Logger MAC Address", icon: "mdi:network-outline"},
     {key: "firmware_version", name: "Logger Firmware Version", icon: "mdi:chip"},
     {key: "hardware_version", name: "Logger Hardware Version", icon: "mdi:chip"},
+    {key: "wifi_ssid", name: "Logger WiFi SSID", icon: "mdi:wifi-settings"},
+    {
+        // WIFI packets come when the logger connects, so no expiry
+        key: "wifi_signal", name: "Logger WiFi Signal", icon: "mdi:wifi",
+        config: {unit_of_measurement: "%", state_class: "measurement"}
+    },
     {
         key: "uptime_seconds", name: "Logger Uptime", icon: "mdi:timer-outline", expires: true,
         config: {unit_of_measurement: "s", device_class: "duration", state_class: "measurement", suggested_unit_of_measurement: "h"}
@@ -49,7 +56,35 @@ function fromHandshake(loggerSerial, handshake, remoteAddress) {
         mac_address: handshake.mac ?? null,
         firmware_version: nonEmpty(handshake.fw_ver),
         hardware_version: nonEmpty(handshake.ver),
+        wifi_ssid: asSsid(handshake.ssid),
     };
+}
+
+/**
+ * dummycloud2 publishes the signal only when the packet's text is the SSID from the handshake. The LSW-3's handshake
+ * has no SSID, so here the text only has to look like an SSID and not be the logger's serial number (upstream saw
+ * both in these packets). With an SSID from the handshake, the text must match it, as in dummycloud2.
+ *
+ * @param {string} loggerSerial
+ * @param {{text: string, signal_quality: number}} wifi Protocol.parseWifiPacketPayload()
+ * @param {string|null} [knownSsid] from the handshake
+ * @returns {{values: object, skipped: string|null}} values by FIELDS key, or why there are none
+ */
+function fromWifi(loggerSerial, wifi, knownSsid) {
+    const ssid = asSsid(wifi.text);
+    if (ssid === null || ssid === loggerSerial) {
+        return {values: {}, skipped: `its text ${JSON.stringify(wifi.text)} isn't a Wi-Fi network name`};
+    }
+    if (knownSsid && ssid !== knownSsid) {
+        return {values: {}, skipped: `its text ${JSON.stringify(wifi.text)} isn't the network from the handshake`};
+    }
+
+    const values = {wifi_ssid: ssid};
+    if (wifi.signal_quality <= 100) {
+        values.wifi_signal = wifi.signal_quality;
+    }
+
+    return {values: values, skipped: null};
 }
 
 /**
@@ -148,6 +183,23 @@ function toIsoTime(seconds) {
 
 /**
  * @param {string|undefined|null} value
+ * @returns {string|null} the value if it can be a Wi-Fi network name: 1 to 32 bytes, no control characters, valid UTF-8
+ */
+function asSsid(value) {
+    const ssid = nonEmpty(value);
+    if (ssid === null || Buffer.byteLength(ssid) > 32) {
+        return null;
+    }
+    const unreadable = [...ssid].some(c => {
+        const code = c.codePointAt(0);
+        return code < 0x20 || code === 0x7f || code === 0xfffd; // control characters, or bytes that aren't UTF-8
+    });
+
+    return unreadable ? null : ssid;
+}
+
+/**
+ * @param {string|undefined|null} value
  * @returns {string|null}
  */
 function nonEmpty(value) {
@@ -161,6 +213,7 @@ module.exports = {
     FIELDS: FIELDS,
     fromHandshake: fromHandshake,
     fromStatus: fromStatus,
+    fromWifi: fromWifi,
     getDiscoveryMessages: getDiscoveryMessages,
     getStateMessages: getStateMessages
 };

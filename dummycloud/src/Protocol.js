@@ -227,7 +227,8 @@ class Protocol {
             mac: formatMacAddress(packet.payload.subarray(59, 65)), // as in dummycloud2; null when blank
             ip: truncateToNullTerminator(packet.payload.subarray(65, 82).toString("ascii")),
             ver: truncateToNullTerminator(packet.payload.subarray(89, 130).toString("ascii")), //hw revision maybe?
-            ssid: truncateToNullTerminator(packet.payload.subarray(172, 210).toString("ascii")),
+            // UTF-8, so non-Latin names survive. Not every logger has it: the LSW-3's bytes here are padding.
+            ssid: truncateToNullTerminator(packet.payload.subarray(172, 210).toString("utf8")),
         };
     }
 
@@ -256,6 +257,37 @@ class Protocol {
             uptime_seconds: payload.readUInt32LE(5),
             clock: base === 0 ? null : base + payload.readUInt32LE(1),
             status: payload.subarray(13, 16).toString("hex")
+        };
+    }
+
+    /**
+     * A WIFI packet (type 0x43), as decoded by dummycloud2, which saw them from microinverter loggers (the LSW-3
+     * hasn't sent one so far). Its text is the Wi-Fi network's name, or something else such as the logger's serial
+     * number; the signal quality matched the logger's web interface for dummycloud2.
+     * 0 flags, 1-4 offset into the base time (LE), 5-8 uptime, 9-12 base time (Unix seconds), 13-14 unknown,
+     * 15-44 text, 45 signal quality in % (over 100 = unknown), 46 link status.
+     *
+     * @param {{header: object, payload: Buffer}} packet
+     * @returns {{flags: number, uptime_seconds: number, clock: number|null, text: string, signal_quality: number,
+     *          link_status: number}|null} clock in Unix seconds, null when the base time is 0; null when too short
+     */
+    static parseWifiPacketPayload(packet) {
+        const payload = packet.payload;
+        if (payload.length < 47) {
+            Logger.debug(`Discarded WIFI packet: payload too short (${payload.length} bytes)`);
+
+            return null;
+        }
+
+        const base = payload.readUInt32LE(9);
+
+        return {
+            flags: payload[0],
+            uptime_seconds: payload.readUInt32LE(5),
+            clock: base === 0 ? null : base + payload.readUInt32LE(1),
+            text: truncateToNullTerminator(payload.subarray(15, 45).toString("utf8")),
+            signal_quality: payload[45],
+            link_status: payload[46]
         };
     }
 

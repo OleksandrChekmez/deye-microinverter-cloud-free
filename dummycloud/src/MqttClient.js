@@ -17,6 +17,7 @@ class MqttClient {
         this.loggers = {}; // what the last handshake said about each logger, by serial (see LoggerMqtt)
         this.loggerReboots = {}; // each logger's last boot time (Unix seconds), by serial
         this.clockWarningTimes = {}; // when a wrong logger clock was last logged, by serial
+        this.lastWifiClocks = {}; // the newest WIFI packet's time (logger clock), by serial
 
         this.dummyCloud.onHandshake((data) => {
             this.handleHandshake(data);
@@ -26,6 +27,9 @@ class MqttClient {
         });
         this.dummyCloud.onReport((data) => {
             this.handleReport(data);
+        });
+        this.dummyCloud.onWifi((data) => {
+            this.handleWifi(data);
         });
     }
 
@@ -105,6 +109,40 @@ class MqttClient {
         const loggerSerial = data.header.loggerSerial.toString();
 
         this.handleLoggerStatus(loggerSerial, `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`, data.payload);
+    }
+
+    /**
+     * @param {{header: object, payload: object}} data payload from Protocol.parseWifiPacketPayload()
+     */
+    handleWifi(data) {
+        const loggerSerial = data.header.loggerSerial.toString();
+        const baseTopic = `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`;
+        const wifi = data.payload;
+
+        // Like dummycloud2: skip a stored older record that arrives after a newer one
+        const last = this.lastWifiClocks[loggerSerial];
+        if (wifi.clock !== null && last !== undefined && wifi.clock < last) {
+            Logger.debug(`Skipped older WIFI record from logger ${loggerSerial}`);
+
+            return;
+        }
+        if (wifi.clock !== null) {
+            this.lastWifiClocks[loggerSerial] = wifi.clock;
+        }
+
+        const {values, skipped} = LoggerMqtt.fromWifi(loggerSerial, wifi, this.loggers[loggerSerial]?.wifi_ssid);
+        if (skipped) {
+            Logger.debug(`Skipped WIFI packet from logger ${loggerSerial}: ${skipped}`);
+
+            return;
+        }
+
+        const autoconfKey = `${loggerSerial}_logger_wifi`;
+        if (this.isAutoconfDue(autoconfKey)) {
+            this.publishAll(LoggerMqtt.getDiscoveryMessages(baseTopic, loggerSerial, values));
+            this.autoconfTimestamps[autoconfKey] = Date.now();
+        }
+        this.publishAll(LoggerMqtt.getStateMessages(baseTopic, values));
     }
 
     handleData(data) {

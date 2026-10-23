@@ -114,17 +114,17 @@ class DummyCloud {
 
             switch (packet.header.type) {
                 case Protocol.MESSAGE_REQUEST_TYPES.WIFI: {
-                    /*
-                        There isn't much of interest in this packet
-                        It can contain the SSID or the Logger SN
-                        + Some counters increasing every second
+                    // Upstream's notes: it can contain the SSID or the logger SN, plus counters, and on connect the
+                    // signal strength
+                    const wifi = Protocol.parseWifiPacketPayload(packet);
 
-                        On connect, it also can contain the signal strength
-                        But that's about it
-
-                        The signal strength over time would've been interesting, but it only gets sent on connect
-                        With that, it's close to useless
-                     */
+                    if (wifi) {
+                        Logger.debug(`WIFI packet data from ${remoteAddress}`, wifi, "payload", packet.payload.toString("hex"));
+                        this.emitWifi({
+                            header: packet.header,
+                            payload: wifi
+                        });
+                    }
                     break;
                 }
                 case Protocol.MESSAGE_REQUEST_TYPES.HANDSHAKE: {
@@ -226,6 +226,14 @@ class DummyCloud {
         this.eventEmitter.on(DummyCloud.PACKET_EVENTS.Data, listener);
     }
 
+    emitWifi(data) {
+        this.eventEmitter.emit(DummyCloud.PACKET_EVENTS.Wifi, data);
+    }
+
+    onWifi(listener) {
+        this.eventEmitter.on(DummyCloud.PACKET_EVENTS.Wifi, listener);
+    }
+
     emitReport(data) {
         this.eventEmitter.emit(DummyCloud.PACKET_EVENTS.Report, data);
     }
@@ -246,7 +254,8 @@ class DummyCloud {
 DummyCloud.PACKET_EVENTS = {
     Data: "Data",
     Handshake: "Handshake",
-    Report: "Report"
+    Report: "Report",
+    Wifi: "Wifi"
 };
 
 

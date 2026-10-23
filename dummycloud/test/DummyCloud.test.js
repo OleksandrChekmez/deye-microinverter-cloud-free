@@ -19,6 +19,7 @@ const handshake = fixture("lsw3-handshake.hex");
 const data = fixture("sun-5k-sg03lp1-data.hex");
 const charging = fixture("sun-5k-sg03lp1-charging.hex");
 const report = fixture("report-synthetic.hex");
+const wifi = fixture("wifi-synthetic.hex");
 
 /**
  * @param {Function} condition
@@ -150,6 +151,35 @@ describe("DummyCloud over TCP", () => {
         await waitFor(() => {
             return fs.readdirSync(captureDir).some(f => {
                 return f.endsWith("_report.hex");
+            });
+        });
+    });
+
+    it("decodes and answers WIFI packets", async () => {
+        const wifiEvents = [];
+        dummyCloud.onWifi(event => {
+            wifiEvents.push(event);
+        });
+
+        const client = net.connect({host: "127.0.0.1", port: port});
+        const replies = [];
+        const replySplitter = new PacketSplitter();
+        client.on("data", chunk => {
+            replies.push(...replySplitter.push(chunk).packets);
+        });
+        client.write(wifi);
+
+        await waitFor(() => {
+            return replies.length === 1;
+        });
+        client.destroy();
+
+        assert.equal(replies[0][4], 0x13); // WIFI reply
+        assert.equal(wifiEvents.length, 1);
+        assert.equal(wifiEvents[0].payload.text, "test-net");
+        await waitFor(() => {
+            return fs.readdirSync(captureDir).some(f => {
+                return f.endsWith("_wifi.hex");
             });
         });
     });

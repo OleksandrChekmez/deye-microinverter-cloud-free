@@ -39,7 +39,8 @@ function createClient() {
     const mqttClient = new MqttClient({
         onHandshake: () => {},
         onData: () => {},
-        onReport: () => {}
+        onReport: () => {},
+        onWifi: () => {}
     });
     mqttClient.client = {
         publish: (topic, message, options) => {

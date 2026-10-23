@@ -47,7 +47,8 @@ function createClient() {
     const mqttClient = new MqttClient({
         onHandshake: () => {},
         onData: () => {},
-        onReport: () => {}
+        onReport: () => {},
+        onWifi: () => {}
     });
     mqttClient.client = {
         publish: (topic, message, options) => {
@@ -348,5 +349,86 @@ describe("REPORT packets", () => {
             "deye-dummycloud/2740963018/logger/uptime_seconds"
         ]);
         assert.equal(warn.mock.callCount(), 0);
+    });
+});
+
+describe("Wi-Fi network and signal", () => {
+    // Not captured from a real logger: built from dummycloud2's test values (see test/fixtures/wifi-synthetic.hex)
+    const wifiPacket = () => {
+        return packet("wifi-synthetic.hex");
+    };
+    const wifi = (changes = {}) => {
+        return {...Protocol.parseWifiPacketPayload(wifiPacket()), ...changes};
+    };
+
+    it("decodes a WIFI packet like dummycloud2 does", () => {
+        assert.equal(wifiPacket().header.type, Protocol.MESSAGE_REQUEST_TYPES.WIFI);
+        assert.deepEqual(wifi(), {
+            flags: 0x81, uptime_seconds: 42, clock: 1700001000, text: "test-net", signal_quality: 70, link_status: 1
+        });
+    });
+
+    it("has no clock when the base time is 0, and nothing when the payload is too short", () => {
+        const payload = Buffer.from(wifiPacket().payload);
+        payload.writeUInt32LE(0, 9);
+        const header = wifiPacket().header;
+
+        assert.equal(Protocol.parseWifiPacketPayload({header: header, payload: payload}).clock, null);
+        assert.equal(Protocol.parseWifiPacketPayload({header: header, payload: payload.subarray(0, 46)}), null);
+    });
+
+    it("takes the SSID from a handshake that has one, but not the LSW-3's padding", () => {
+        const handshake = {fw_ver: "MW3_16U_5406_1.53", mac: null, ip: "192.0.2.15", ver: "V1.1.00.0F"};
+
+        assert.equal(LoggerMqtt.fromHandshake("1", {...handshake, ssid: "test-ssid"}).wifi_ssid, "test-ssid");
+        assert.equal(LoggerMqtt.fromHandshake("1", {...handshake, ssid: "Мій дім"}).wifi_ssid, "Мій дім");
+        assert.equal(LoggerMqtt.fromHandshake("1", Protocol.parseLoggerPacketPayload(packet("lsw3-handshake.hex"))).wifi_ssid, null);
+    });
+
+    it("decodes a UTF-8 network name in the handshake", () => {
+        const p = packet("lsw3-handshake.hex");
+        const payload = Buffer.from(p.payload);
+        payload.fill(0, 172, 210);
+        payload.write("Мій дім", 172, "utf8");
+
+        assert.equal(Protocol.parseLoggerPacketPayload({header: p.header, payload: payload}).ssid, "Мій дім");
+    });
+
+    it("uses the packet's text as SSID only when it looks like one", () => {
+        assert.deepEqual(LoggerMqtt.fromWifi("2740963018", wifi()), {
+            values: {wifi_ssid: "test-net", wifi_signal: 70}, skipped: null
+        });
+        assert.deepEqual(LoggerMqtt.fromWifi("2740963018", wifi(), "test-net").values, {wifi_ssid: "test-net", wifi_signal: 70});
+        // The other kind of WIFI packet: the logger's serial number instead of the network
+        assert.match(LoggerMqtt.fromWifi("2740963018", wifi({text: "2740963018"})).skipped, /isn't a Wi-Fi network name/);
+        assert.match(LoggerMqtt.fromWifi("2740963018", wifi({text: "ac\x01"})).skipped, /isn't a Wi-Fi network name/);
+        assert.match(LoggerMqtt.fromWifi("2740963018", wifi(), "home").skipped, /isn't the network from the handshake/);
+        // An unknown signal quality
+        assert.deepEqual(LoggerMqtt.fromWifi("2740963018", wifi({signal_quality: 255})).values, {wifi_ssid: "test-net"});
+    });
+
+    it("publishes the network and signal, and skips older records", () => {
+        const {mqttClient, published} = createClient();
+        const header = wifiPacket().header;
+        mqttClient.handleWifi({header: header, payload: wifi()});
+
+        assert.deepEqual(published.filter(m => {
+            return m.topic.startsWith("deye-dummycloud/");
+        }), [
+            {topic: "deye-dummycloud/2740963018/logger/wifi_ssid", message: "test-net", retain: true},
+            {topic: "deye-dummycloud/2740963018/logger/wifi_signal", message: "70", retain: true}
+        ]);
+        const signal = JSON.parse(published.find(m => {
+            return m.topic === "homeassistant/sensor/deye_dummycloud_2740963018/2740963018_logger_wifi_signal/config";
+        }).message);
+        assert.equal(signal.name, "Logger WiFi Signal");
+        assert.equal(signal.unit_of_measurement, "%");
+        assert.equal(signal.expire_after, undefined);
+
+        const count = published.length;
+        mqttClient.handleWifi({header: header, payload: wifi({clock: 1700000500, signal_quality: 40})});
+        assert.equal(published.length, count);
+        mqttClient.handleWifi({header: header, payload: wifi({clock: 1700002000, signal_quality: 65})});
+        assert.equal(published.at(-1).message, "65");
     });
 });
