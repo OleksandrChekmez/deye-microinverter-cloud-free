@@ -1,3 +1,4 @@
+const HybridInverterSinglePhaseMqtt = require("./HybridInverterSinglePhaseMqtt");
 const Logger = require("./Logger");
 const mqtt = require("mqtt");
 
@@ -11,6 +12,7 @@ class MqttClient {
         this.dummyCloud = dummyCloud;
 
         this.autoconfTimestamps = {};
+        this.lastReadingTimes = {}; // by logger serial
 
         this.dummyCloud.onHandshake((data) => {
             this.handleHandshake(data);
@@ -66,8 +68,7 @@ class MqttClient {
 
     handleData(data) {
         if (data.payload.schema === "HYBRIDINVERTER_SINGLEPHASE") {
-            // TODO: publish hybrid inverter values. Until then they're only visible in the debug log
-            Logger.debug("MQTT publishing for single-phase hybrid inverters is not implemented yet");
+            this.handleHybridSinglePhaseData(data);
 
             return;
         }
@@ -123,9 +124,50 @@ class MqttClient {
         this.client.publish(`${baseTopic}/inverter/efficiency`, efficiency);
     }
 
+    handleHybridSinglePhaseData(data) {
+        const loggerSerial = data.header.loggerSerial.toString();
+        const baseTopic = `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`;
+
+        // The logger sends every reading several times; publish each one only once
+        if (this.lastReadingTimes[loggerSerial] === data.payload.inverter_time) {
+            Logger.debug(`Skipped repeated reading from ${data.payload.inverter_time} (logger ${loggerSerial})`);
+
+            return;
+        }
+        this.lastReadingTimes[loggerSerial] = data.payload.inverter_time;
+
+        if (this.isAutoconfDue(loggerSerial)) {
+            this.publishAll(HybridInverterSinglePhaseMqtt.getDiscoveryMessages(baseTopic, loggerSerial, data.payload, data.meta));
+            this.autoconfTimestamps[loggerSerial] = Date.now();
+        }
+
+        this.publishAll(HybridInverterSinglePhaseMqtt.getStateMessages(baseTopic, data.payload));
+        Logger.debug(`Published reading from ${data.payload.inverter_time} (logger ${loggerSerial})`);
+    }
+
+    /**
+     * @private
+     * @param {Array<{topic: string, message: string, retain: boolean}>} messages
+     */
+    publishAll(messages) {
+        for (const {topic, message, retain} of messages) {
+            this.client.publish(topic, message, {retain: retain});
+        }
+    }
+
+    /**
+     * Home Assistant discovery configs are (re-)published every 4 hours
+     *
+     * @private
+     * @param {string} loggerSerial
+     * @returns {boolean}
+     */
+    isAutoconfDue(loggerSerial) {
+        return Date.now() - (this.autoconfTimestamps[loggerSerial] ?? 0) > 4 * 60 * 60 * 1000;
+    }
+
     ensureAutoconf(meta, loggerSerial, mpptCount) {
-        // (Re-)publish every 4 hours
-        if (Date.now() - (this.autoconfTimestamps[loggerSerial] ?? 0) <= 4 * 60 * 60 * 1000) {
+        if (!this.isAutoconfDue(loggerSerial)) {
             return;
         }
         const baseTopic = `${MqttClient.TOPIC_PREFIX}/${loggerSerial.toString()}`;
