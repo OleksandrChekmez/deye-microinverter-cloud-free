@@ -1,3 +1,4 @@
+const CloudForwarder = require("./CloudForwarder");
 const EventEmitter = require("events").EventEmitter;
 const fs = require("fs");
 const Logger = require("./Logger");
@@ -14,12 +15,17 @@ class DummyCloud {
 
         // Optional: folder to save every DATA packet to, one hex file per packet
         this.captureDir = process.env.CAPTURE_DIR;
+        // Optional diagnostic: "host:port" to copy all logger traffic to, logging that server's replies
+        this.forwardTo = process.env.FORWARD_TO;
     }
 
     initialize() {
         if (this.captureDir) {
             fs.mkdirSync(this.captureDir, {recursive: true});
             Logger.info(`Saving DATA packets to ${this.captureDir}`);
+        }
+        if (this.forwardTo) {
+            Logger.warn(`FORWARD_TO is set: copying all logger traffic to ${this.forwardTo} and logging its replies (not passed on to the logger)`);
         }
 
         this.server.listen(
@@ -44,9 +50,16 @@ class DummyCloud {
         const remoteAddress = socket.remoteAddress; // As this is a getter, it may become unavailable
         Logger.info(`New connection from ${remoteAddress}`);
 
+        const forwarder = this.forwardTo ? new CloudForwarder(this.forwardTo, remoteAddress) : null;
+
         socket.on("data", (data) => {
             Logger.trace(new Date().toISOString(), `Data received from client ${remoteAddress}: ${data.toString()}`);
             Logger.trace(new Date().toISOString(), `Data ${remoteAddress}:`, data.toString("hex"));
+
+            if (forwarder) {
+                Logger.info(`[forward] logger sent: ${CloudForwarder.summarize(data)}`);
+                forwarder.forward(data);
+            }
 
             try {
                 const packet = Protocol.parsePacket(data);
@@ -114,6 +127,9 @@ class DummyCloud {
                     Logger.trace("Response", response.toString("hex"));
 
                     socket.write(response);
+                    if (forwarder) {
+                        forwarder.logOwnReply(response);
+                    }
                 }
             } catch (e) {
                 Logger.error(`Error while parsing packet from ${remoteAddress}`, e);
@@ -126,6 +142,9 @@ class DummyCloud {
 
         socket.on("close", function() {
             Logger.info(`Closing connection with ${remoteAddress}`);
+            if (forwarder) {
+                forwarder.close();
+            }
         });
 
         socket.on("error", function(err) {
