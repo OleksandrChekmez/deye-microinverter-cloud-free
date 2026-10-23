@@ -33,6 +33,22 @@ I'd still keep the firewall rules preventing the inverter from phoning home in p
 
 ## Deployment
 
+### As a Home Assistant app
+
+This folder is also a Home Assistant app (`config.yaml`), built on the Home Assistant machine from the Dockerfile.
+
+1. In Home Assistant, open the app store (**Settings → Apps**), then the **⋮** menu → **Repositories**, and add
+   `https://github.com/OleksandrChekmez/deye-microinverter-cloud-free` (append `#<branch>` to use a branch other than the default one).
+2. Install **Deye Dummycloud** from the new repository and start it.
+3. Point the logger's `Server A Setting` at the Home Assistant machine, port `10000`.
+
+With the Mosquitto broker app installed, the app connects to it by itself. Its settings (log level, a different MQTT broker, packet capture) are in the app's **Configuration** tab, and `DOCS.md` is shown in its **Documentation** tab.
+Captured packets go to `/share/deye-dummycloud/captures`. The timezone comes from Home Assistant.
+
+To release an update, raise the version in both `package.json` and `config.yaml` (a test checks they match) and push. Home Assistant then offers the update and rebuilds the image.
+
+### With Docker
+
 The dummycloud can be started using `npm run start`. Next to this readme, there's also a dockerfile provided.
 
 A `docker-compose.yml` entry could for example look like this:
