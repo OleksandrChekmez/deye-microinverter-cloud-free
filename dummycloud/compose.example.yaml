@@ -1,0 +1,24 @@
+# Example Docker Compose setup. Copy to compose.yaml (gitignored) and fill in your MQTT details.
+# Keep it next to the Dockerfile. The image is built only when the tag below doesn't exist yet,
+# so to deploy new code: bump the version in package.json (npm version x.y.z-fork.N --no-git-tag-version),
+# set the same version here, then rebuild (Synology Container Manager: Project -> Stop -> Build,
+# or `docker compose up -d --build`).
+
+services:
+  deye-dummycloud:
+    build: .
+    image: deye-dummycloud:1.1.0-fork.2
+    container_name: deye-dummycloud
+    restart: always
+    environment:
+      LOGLEVEL: info
+      MQTT_BROKER_URL: mqtt://192.168.0.10
+      # Only needed if the broker requires a login
+      # MQTT_USERNAME: example-user
+      # MQTT_PASSWORD: example-password
+      # Optional: save every DATA packet as a .hex file in the "captures" folder
+      # CAPTURE_DIR: /app/captures
+    # volumes:
+    #   - ./captures:/app/captures
+    ports:
+      - "10000:10000"
