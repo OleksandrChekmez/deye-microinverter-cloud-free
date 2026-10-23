@@ -1,6 +1,7 @@
 const EventEmitter = require("events").EventEmitter;
 const Logger = require("./Logger");
 const net = require("net");
+const packageJson = require("../package.json");
 const Protocol = require("./Protocol");
 
 class DummyCloud {
@@ -16,7 +17,7 @@ class DummyCloud {
                 host: "0.0.0.0"
             }, 
             function() {
-                Logger.info(`Starting deye-dummycloud on port ${DummyCloud.PORT}`);
+                Logger.info(`Starting deye-dummycloud v${packageJson.version} on port ${DummyCloud.PORT}`);
         });
 
         this.server.on("connection", (socket) => {
