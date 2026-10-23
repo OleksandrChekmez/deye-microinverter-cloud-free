@@ -26,10 +26,10 @@ class DummyCloud {
             {
                 port: DummyCloud.PORT,
                 host: "0.0.0.0"
-            }, 
+            },
             function() {
                 Logger.info(`Starting deye-dummycloud v${packageJson.version} on port ${DummyCloud.PORT}`);
-        });
+            });
 
         this.server.on("connection", (socket) => {
             this.handleConnection(socket);
