@@ -13,7 +13,7 @@ Supported: Deye microinverters and single-phase hybrid inverters with an LSW-3 s
    - Microinverters: Server B may point to the same address.
 4. Block the logger's internet access in your router, so it can't reach the real cloud.
 
-Readings arrive every few minutes. The sensors show up under the MQTT integration as a device named after the logger's serial number.
+Readings arrive every few minutes. The sensors show up under the MQTT integration as a device named after the logger's serial number. Its diagnostic sensors show the logger's IP address, MAC address, firmware and hardware version, and the device's "Visit" link opens the logger's web interface.
 
 ## Notes
 

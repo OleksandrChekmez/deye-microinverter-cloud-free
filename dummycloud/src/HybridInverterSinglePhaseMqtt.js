@@ -63,16 +63,16 @@ function getStateMessages(baseTopic, decoded) {
  * @param {string} baseTopic e.g. "deye-dummycloud/2740963018"
  * @param {string} loggerSerial
  * @param {object} decoded result of HybridInverterSinglePhase.parse()
- * @param {{remoteAddress: string}} meta
+ * @param {string} loggerAddress the logger's IP, for the device's link to its web interface
  * @returns {Array<{topic: string, message: string, retain: boolean}>}
  */
-function getDiscoveryMessages(baseTopic, loggerSerial, decoded, meta) {
+function getDiscoveryMessages(baseTopic, loggerSerial, decoded, loggerAddress) {
     const device = {
         "manufacturer": "Deye",
         "model": "Single-Phase Hybrid Inverter",
         "name": `Deye Hybrid Inverter ${loggerSerial}`,
         "serial_number": decoded.inverter_serial,
-        "configuration_url": `http://${meta.remoteAddress}/index_cn.html`,
+        "configuration_url": `http://${loggerAddress}/index_cn.html`,
         "identifiers": [
             `deye_dummycloud_${loggerSerial}`
         ]

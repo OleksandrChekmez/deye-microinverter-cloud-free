@@ -1,5 +1,6 @@
 const HybridInverterSinglePhaseMqtt = require("./HybridInverterSinglePhaseMqtt");
 const Logger = require("./Logger");
+const LoggerMqtt = require("./LoggerMqtt");
 const mqtt = require("mqtt");
 
 
@@ -13,6 +14,7 @@ class MqttClient {
 
         this.autoconfTimestamps = {};
         this.lastReadingTimes = {}; // by logger serial
+        this.loggers = {}; // what the last handshake said about each logger, by serial (see LoggerMqtt)
 
         this.dummyCloud.onHandshake((data) => {
             this.handleHandshake(data);
@@ -63,7 +65,32 @@ class MqttClient {
     }
 
     handleHandshake(data) {
-        // Nothing to see here
+        const loggerSerial = data.header.loggerSerial.toString();
+        const baseTopic = `${MqttClient.TOPIC_PREFIX}/${loggerSerial}`;
+        const info = LoggerMqtt.fromHandshake(loggerSerial, data.payload, data.meta?.remoteAddress);
+
+        if (this.loggers[loggerSerial]?.ip_address !== info.ip_address) {
+            // The inverter's discovery links to the logger's IP: re-send it with the next reading
+            delete this.autoconfTimestamps[loggerSerial];
+        }
+        this.loggers[loggerSerial] = info;
+
+        const autoconfKey = `${loggerSerial}_logger`;
+        if (this.isAutoconfDue(autoconfKey)) {
+            this.publishAll(LoggerMqtt.getDiscoveryMessages(baseTopic, loggerSerial, info));
+            this.autoconfTimestamps[autoconfKey] = Date.now();
+        }
+        this.publishAll(LoggerMqtt.getStateMessages(baseTopic, info));
+    }
+
+    /**
+     * @private
+     * @param {string} loggerSerial
+     * @param {{remoteAddress: string}} meta
+     * @returns {string} the logger's IP from its handshake, else where the connection came from
+     */
+    getLoggerAddress(loggerSerial, meta) {
+        return this.loggers[loggerSerial]?.ip_address ?? meta.remoteAddress;
     }
 
     handleData(data) {
@@ -137,7 +164,9 @@ class MqttClient {
         this.lastReadingTimes[loggerSerial] = data.payload.inverter_time;
 
         if (this.isAutoconfDue(loggerSerial)) {
-            this.publishAll(HybridInverterSinglePhaseMqtt.getDiscoveryMessages(baseTopic, loggerSerial, data.payload, data.meta));
+            this.publishAll(HybridInverterSinglePhaseMqtt.getDiscoveryMessages(
+                baseTopic, loggerSerial, data.payload, this.getLoggerAddress(loggerSerial, data.meta)
+            ));
             this.autoconfTimestamps[loggerSerial] = Date.now();
         }
 
@@ -175,7 +204,7 @@ class MqttClient {
             "manufacturer":"Deye",
             "model":"Microinverter",
             "name":`Deye Microinverter ${loggerSerial}`,
-            "configuration_url": `http://${meta.remoteAddress}/index_cn.html`,
+            "configuration_url": `http://${this.getLoggerAddress(loggerSerial, meta)}/index_cn.html`,
             "identifiers":[
                 `deye_dummycloud_${loggerSerial}`
             ]

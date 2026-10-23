@@ -1,6 +1,6 @@
 const HybridInverterSinglePhase = require("./HybridInverterSinglePhase");
 const Logger = require("./Logger");
-const {getKeyByValue, toHexByte, truncateToNullTerminator} = require("./util");
+const {formatMacAddress, getKeyByValue, toHexByte, truncateToNullTerminator} = require("./util");
 
 const HEADER_LEN = 11;
 const FOOTER_LEN = 2;
@@ -204,6 +204,7 @@ class Protocol {
         //TODO: there's a lot more in this packet
         return {
             fw_ver: truncateToNullTerminator(packet.payload.subarray(19, 60).toString("ascii")),
+            mac: formatMacAddress(packet.payload.subarray(59, 65)), // as in dummycloud2; null when blank
             ip: truncateToNullTerminator(packet.payload.subarray(65, 82).toString("ascii")),
             ver: truncateToNullTerminator(packet.payload.subarray(89, 130).toString("ascii")), //hw revision maybe?
             ssid: truncateToNullTerminator(packet.payload.subarray(172, 210).toString("ascii")),

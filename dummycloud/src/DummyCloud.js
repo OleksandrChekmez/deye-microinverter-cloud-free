@@ -133,7 +133,10 @@ class DummyCloud {
                     Logger.debug(`Handshake packet data from ${remoteAddress}`, data);
                     this.emitHandshake({
                         header: packet.header,
-                        payload: data
+                        payload: data,
+                        meta: {
+                            remoteAddress: remoteAddress
+                        }
                     });
                     break;
                 }
