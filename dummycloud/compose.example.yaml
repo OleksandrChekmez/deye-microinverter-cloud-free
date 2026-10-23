@@ -12,6 +12,8 @@ services:
     restart: always
     environment:
       LOGLEVEL: info
+      # Your timezone (tz database name). Replies to the logger carry its UTC offset, as the Solarman cloud's do
+      TZ: Europe/Berlin
       MQTT_BROKER_URL: mqtt://192.168.0.10
       # Only needed if the broker requires a login
       # MQTT_USERNAME: example-user

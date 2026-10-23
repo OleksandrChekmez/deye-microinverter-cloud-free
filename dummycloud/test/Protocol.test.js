@@ -52,11 +52,14 @@ describe("SUN-5K-SG03LP1-EU DATA packet (schema 0x07)", () => {
     });
 
     it("gets a valid time response", () => {
-        const response = Protocol.buildTimeResponse(packet);
+        const response = Protocol.buildTimeResponse(packet, 2);
         const responseHeader = Protocol.parseHeader(response);
 
         assert.equal(responseHeader.type, 0x12);
-        assert.equal(responseHeader.msgIDResponse, packet.header.msgIDResponse + 1);
+        // Like the cloud: first sequence byte counts replies on the connection, the second is echoed
+        assert.equal(responseHeader.msgIDResponse, 2);
+        assert.equal(responseHeader.msgIDRequest, packet.header.msgIDRequest);
+        assert.equal(response.readInt32LE(17), Protocol.getTimezoneOffsetMinutes());
         assert.equal(responseHeader.loggerSerial, packet.header.loggerSerial);
         assert.equal(response[11], packet.payload[0]);
         assert.equal(Protocol.parseFooter(response).checksum, Protocol.checksum(response));

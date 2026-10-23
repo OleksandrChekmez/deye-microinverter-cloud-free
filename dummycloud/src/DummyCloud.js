@@ -35,6 +35,7 @@ class DummyCloud {
             },
             function() {
                 Logger.info(`Starting deye-dummycloud v${packageJson.version} on port ${DummyCloud.PORT}`);
+                Logger.info(`Timezone offset sent to loggers: ${Protocol.getTimezoneOffsetMinutes()} minutes (TZ=${process.env.TZ ?? "not set"})`);
             });
 
         this.server.on("connection", (socket) => {
@@ -51,6 +52,7 @@ class DummyCloud {
         Logger.info(`New connection from ${remoteAddress}`);
 
         const forwarder = this.forwardTo ? new CloudForwarder(this.forwardTo, remoteAddress) : null;
+        let replyCount = 0; // the reply's sequence number counts replies per connection, like the real cloud
 
         socket.on("data", (data) => {
             Logger.trace(new Date().toISOString(), `Data received from client ${remoteAddress}: ${data.toString()}`);
@@ -67,7 +69,7 @@ class DummyCloud {
 
                 switch (packet.header.type) {
                     case Protocol.MESSAGE_REQUEST_TYPES.HEARTBEAT: {
-                        response = Protocol.buildTimeResponse(packet);
+                        response = Protocol.buildTimeResponse(packet, ++replyCount);
                         break;
                     }
                     case Protocol.MESSAGE_REQUEST_TYPES.WIFI: {
@@ -82,7 +84,7 @@ class DummyCloud {
                             The signal strength over time would've been interesting, but it only gets sent on connect
                             With that, it's close to useless
                          */
-                        response = Protocol.buildTimeResponse(packet);
+                        response = Protocol.buildTimeResponse(packet, ++replyCount);
                         break;
                     }
                     case Protocol.MESSAGE_REQUEST_TYPES.HANDSHAKE: {
@@ -94,7 +96,7 @@ class DummyCloud {
                             payload: data
                         });
 
-                        response = Protocol.buildTimeResponse(packet);
+                        response = Protocol.buildTimeResponse(packet, ++replyCount);
                         break;
                     }
                     case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
@@ -114,12 +116,12 @@ class DummyCloud {
                             });
                         }
 
-                        response = Protocol.buildTimeResponse(packet);
+                        response = Protocol.buildTimeResponse(packet, ++replyCount);
                         break;
                     }
 
                     default: {
-                        response = Protocol.buildTimeResponse(packet);
+                        response = Protocol.buildTimeResponse(packet, ++replyCount);
                     }
                 }
 

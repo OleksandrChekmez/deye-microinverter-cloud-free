@@ -210,7 +210,15 @@ class Protocol {
         };
     }
 
-    static buildTimeResponse(packet) {
+    /**
+     * Builds the reply to a logger message in the format the real Solarman cloud uses
+     * (captured 2026-10-23 from an LSW-3 logger, see CLAUDE.md).
+     *
+     * @param {{header: object, payload: Buffer}} packet
+     * @param {number} replyNumber how many replies this connection has had, including this one (1, 2, 3, …)
+     * @returns {Buffer}
+     */
+    static buildTimeResponse(packet, replyNumber) {
         const response = Buffer.alloc(23);
 
         // header
@@ -218,7 +226,8 @@ class Protocol {
         response.writeUInt16LE(10, 1); //payload len
         response[3] = packet.header.unknown1;
         response[4] = packet.header.type - 0x30; // set type to response for that type
-        response[5] = packet.header.msgIDResponse + 1;
+        // Sequence number: the cloud counts its replies per connection in the first byte and echoes the second
+        response[5] = replyNumber & 0xff;
         response[6] = packet.header.msgIDRequest;
         response.writeUint32LE(packet.header.loggerSerial, 7);
         // end header
@@ -230,8 +239,9 @@ class Protocol {
             Math.round(Date.now()/1000),
             13
         );
-        response.writeUint32LE(
-            0,
+        // Local timezone offset in minutes (e.g. 180 for UTC+3), as the cloud sends it. Comes from the TZ setting
+        response.writeInt32LE(
+            Protocol.getTimezoneOffsetMinutes(),
             17
         );
 
@@ -240,6 +250,13 @@ class Protocol {
         response[response.length - 1] = 0x15; //magic
 
         return response;
+    }
+
+    /**
+     * @returns {number} minutes east of UTC for the current local time (TZ setting), e.g. 180 for UTC+3
+     */
+    static getTimezoneOffsetMinutes() {
+        return -new Date().getTimezoneOffset() || 0; // "|| 0" turns -0 into 0
     }
 
     static parseTime(buf) {
