@@ -7,7 +7,7 @@
 services:
   deye-dummycloud:
     build: .
-    image: deye-dummycloud:1.1.0-fork.9
+    image: deye-dummycloud:1.1.0-fork.10
     container_name: deye-dummycloud
     restart: always
     environment:
