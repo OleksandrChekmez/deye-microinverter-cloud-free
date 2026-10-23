@@ -101,4 +101,10 @@ describe("HomeAssistantApp", () => {
         assert.equal(env.MQTT_BROKER_URL, "mqtts://core-mosquitto:8883");
     });
 
+    it("has the same version in config.yaml as in package.json", () => {
+        const configYaml = fs.readFileSync(path.join(__dirname, "..", "config.yaml"), "utf8");
+        const version = configYaml.match(/^version: "(.+)"$/m)?.[1];
+
+        assert.equal(version, require("../package.json").version);
+    });
 });

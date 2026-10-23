@@ -1,0 +1,32 @@
+# Home Assistant app definition. The image is built on the Home Assistant machine from the Dockerfile next to this file.
+# Keep "version" equal to package.json's version: a new version is what makes Home Assistant offer the update.
+name: Deye Dummycloud
+version: "1.1.0-fork.9"
+slug: deye_dummycloud
+description: Replaces the Solarman cloud for Deye inverter loggers and publishes their data to MQTT, with Home Assistant discovery
+url: https://github.com/OleksandrChekmez/deye-microinverter-cloud-free
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+boot: auto
+ports:
+  10000/tcp: 10000
+services:
+  - mqtt:want
+map:
+  - type: share
+    read_only: false
+options:
+  log_level: info
+  mqtt_check_cert: true
+  capture_packets: false
+schema:
+  log_level: list(trace|debug|info|warn|error)
+  mqtt_broker_url: str?
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_check_cert: bool
+  capture_packets: bool
+  forward_to: str?

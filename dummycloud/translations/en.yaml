@@ -1,0 +1,24 @@
+configuration:
+  log_level:
+    name: Log level
+    description: "info for normal use. debug also shows why packets are skipped, trace logs every packet as hex."
+  mqtt_broker_url:
+    name: MQTT broker URL
+    description: "Leave empty to use the Mosquitto app automatically. Otherwise e.g. mqtt://192.168.0.10:1883"
+  mqtt_username:
+    name: MQTT username
+    description: Only used with a broker URL set above.
+  mqtt_password:
+    name: MQTT password
+    description: Only used with a broker URL set above.
+  mqtt_check_cert:
+    name: Check broker certificate
+    description: Turn off to accept a self-signed certificate on an mqtts:// broker.
+  capture_packets:
+    name: Capture packets
+    description: "For development: saves every received DATA packet as a .hex file in /share/deye-dummycloud/captures."
+  forward_to:
+    name: Forward to (diagnostic)
+    description: "e.g. access1.solarmanpv.com:10000. Copies all logger traffic to that server and logs its replies. Sends your data there while set; leave empty normally."
+network:
+  10000/tcp: Logger connections (the logger's "Server A")

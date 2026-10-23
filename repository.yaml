@@ -1,0 +1,4 @@
+# Lets Home Assistant install the dummycloud (in ./dummycloud) as an app from this repository
+name: Deye Dummycloud (hybrid inverter fork)
+url: https://github.com/OleksandrChekmez/deye-microinverter-cloud-free
+maintainer: Oleksandr Chekmez
