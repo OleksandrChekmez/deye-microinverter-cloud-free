@@ -1,5 +1,5 @@
 const Logger = require("./Logger");
-const {getKeyByValue, truncateToNullTerminator} = require("./util");
+const {getKeyByValue, toHexByte, truncateToNullTerminator} = require("./util");
 
 const HEADER_LEN = 11;
 const FOOTER_LEN = 2;
@@ -68,21 +68,38 @@ class Protocol {
         };
     }
 
+    /**
+     * Returns null (and logs why at debug level) for packets that aren't decoded.
+     *
+     * @param {{header: object, payload: Buffer}} packet
+     * @returns {object|null}
+     */
     static parseDataPacketPayload(packet) {
-        switch (packet.payload[1]) {
+        const schema = packet.payload[1];
+
+        switch (schema) {
             case Protocol.DATA_PACKET_SCHEMAS.MICROINVERTER:
                 return Protocol.parseDataPacketMicroinverterPayload(packet);
-            default:
-                return null; //TODO: parse relay and string inverter packets
+            default: {
+                //TODO: parse hybrid, relay and string inverter packets
+                const schemaName = getKeyByValue(Protocol.DATA_PACKET_SCHEMAS, schema) ?? "unknown";
+
+                Logger.debug(
+                    `Discarded DATA packet: unsupported schema ${toHexByte(schema)} (${schemaName}),`,
+                    `payload[0]=${toHexByte(packet.payload[0])}, payload length ${packet.payload.length}`
+                );
+
+                return null;
+            }
         }
-
-
     }
 
     static parseDataPacketMicroinverterPayload(packet) {
         if (!!(packet.payload[0] & 0b10000000)) {
             // Seems to be one of these weird historic data packets from the SUN-M series. Ignoring for now
             // TODO: understand what they mean and how they should be handled
+            Logger.debug(`Discarded DATA packet: historic microinverter packet (payload[0]=${toHexByte(packet.payload[0])})`);
+
             return null;
         }
 
@@ -236,6 +253,7 @@ Protocol.MESSAGE_RESPONSE_TYPES = {
 };
 
 Protocol.DATA_PACKET_SCHEMAS = {
+    HYBRIDINVERTER_SINGLEPHASE: 0x07, // e.g. SUN-5K-SG03LP1-EU; payload is a dump of Modbus register ranges
     MICROINVERTER: 0x08,
     HYBRIDINVERTER: 0x11,
     RELAYMODULE: 0x13

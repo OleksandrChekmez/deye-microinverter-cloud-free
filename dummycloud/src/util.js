@@ -17,8 +17,13 @@ function truncateToNullTerminator(str) {
     }
 }
 
+function toHexByte(value) {
+    return "0x" + value.toString(16).padStart(2, "0");
+}
+
 
 module.exports = {
     getKeyByValue: getKeyByValue,
+    toHexByte: toHexByte,
     truncateToNullTerminator: truncateToNullTerminator
 };

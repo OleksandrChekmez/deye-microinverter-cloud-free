@@ -73,6 +73,7 @@ class DummyCloud {
                         break;
                     }
                     case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
+                        // Returns null for packets it can't decode, and logs the reason itself
                         const data = Protocol.parseDataPacketPayload(packet);
 
                         if (data) {
@@ -84,8 +85,6 @@ class DummyCloud {
                                     remoteAddress: remoteAddress
                                 }
                             });
-                        } else {
-                            Logger.debug("Discarded data packet");
                         }
 
                         response = Protocol.buildTimeResponse(packet);
