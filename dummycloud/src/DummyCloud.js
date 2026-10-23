@@ -7,14 +7,14 @@ const packageJson = require("../package.json");
 const PacketSplitter = require("./PacketSplitter");
 const path = require("path");
 const Protocol = require("./Protocol");
-const {toHexByte} = require("./util");
+const {getKeyByValue, toHexByte} = require("./util");
 
 class DummyCloud {
     constructor() {
         this.eventEmitter = new EventEmitter();
         this.server = new net.Server();
 
-        // Optional: folder to save every DATA packet to, one hex file per packet
+        // Optional: folder to save every packet to, one hex file per packet
         this.captureDir = process.env.CAPTURE_DIR;
         // Optional diagnostic: "host:port" to copy all logger traffic to, logging that server's replies
         this.forwardTo = process.env.FORWARD_TO;
@@ -23,7 +23,7 @@ class DummyCloud {
     initialize() {
         if (this.captureDir) {
             fs.mkdirSync(this.captureDir, {recursive: true});
-            Logger.info(`Saving DATA packets to ${this.captureDir}`);
+            Logger.info(`Saving all packets to ${this.captureDir}`);
         }
         if (this.forwardTo) {
             Logger.warn(`FORWARD_TO is set: copying all logger traffic to ${this.forwardTo} and logging its replies (not passed on to the logger)`);
@@ -110,6 +110,7 @@ class DummyCloud {
 
         try {
             const packet = Protocol.parsePacket(raw);
+            this.capturePacket(raw, packet);
 
             switch (packet.header.type) {
                 case Protocol.MESSAGE_REQUEST_TYPES.WIFI: {
@@ -137,8 +138,6 @@ class DummyCloud {
                     break;
                 }
                 case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
-                    this.capturePacket(raw, packet);
-
                     // Returns null for packets it can't decode, and logs the reason itself
                     const decoded = Protocol.parseDataPacketPayload(packet);
 
@@ -174,6 +173,7 @@ class DummyCloud {
 
     /**
      * Saves the raw packet as a hex file in CAPTURE_DIR (if set), in the same format as test/fixtures.
+     * DATA packets are named after their schema byte (e.g. _schema07), the others after their type (e.g. _handshake).
      *
      * @private
      * @param {Buffer} raw
@@ -185,8 +185,18 @@ class DummyCloud {
         }
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const schema = toHexByte(packet.payload[1]).slice(2);
-        const fileName = `${packet.header.loggerSerial}_${timestamp}_schema${schema}.hex`;
+        let kind;
+        if (packet.header.type === Protocol.MESSAGE_REQUEST_TYPES.DATA && packet.payload.length > 1) {
+            kind = "schema" + toHexByte(packet.payload[1]).slice(2);
+        } else {
+            const typeName = getKeyByValue(Protocol.MESSAGE_REQUEST_TYPES, packet.header.type);
+            kind = typeName ? typeName.toLowerCase() : "type" + toHexByte(packet.header.type).slice(2);
+        }
+        // Packets that arrive in the same read get the same timestamp, so number them
+        const baseName = `${packet.header.loggerSerial}_${timestamp}_${kind}`;
+        this.captureSeq = baseName === this.lastCaptureName ? this.captureSeq + 1 : 0;
+        this.lastCaptureName = baseName;
+        const fileName = `${baseName}${this.captureSeq > 0 ? "-" + this.captureSeq : ""}.hex`;
 
         fs.promises.writeFile(path.join(this.captureDir, fileName), raw.toString("hex") + "\n").catch(err => {
             Logger.error(`Failed to save captured packet ${fileName}`, err);

@@ -15,7 +15,7 @@ The dummycloud is configured using environment variables to be container-friendl
 - `MQTT_PASSWORD` (no default, optional.)
 - `MQTT_CHECK_CERT` set to `false` for using `mqtts` with self signed certificate (defaults to `true`)
 - `TZ` your timezone, e.g. `Europe/Berlin` (optional). Replies to the logger include its UTC offset, as the Solarman cloud's do.
-- `CAPTURE_DIR` (optional, for development) saves every received DATA packet as a `.hex` file in this folder
+- `CAPTURE_DIR` (optional, for development) saves every received packet as a `.hex` file in this folder
 - `FORWARD_TO` (optional, diagnostic only) e.g. `access1.solarmanpv.com:10000`: copies all logger traffic to that server and logs its replies, which are never passed on to the logger. While it's set, your data is sent to that server.
 
 ## Inverter Setup

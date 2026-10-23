@@ -16,7 +16,7 @@ configuration:
     description: Turn off to accept a self-signed certificate on an mqtts:// broker.
   capture_packets:
     name: Capture packets
-    description: "For development: saves every received DATA packet as a .hex file in /share/deye-dummycloud/captures."
+    description: "For development: saves every received packet as a .hex file in /share/deye-dummycloud/captures."
   forward_to:
     name: Forward to (diagnostic)
     description: "e.g. access1.solarmanpv.com:10000. Copies all logger traffic to that server and logs its replies. Sends your data there while set; leave empty normally."

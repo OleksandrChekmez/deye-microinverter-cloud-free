@@ -106,4 +106,21 @@ describe("DummyCloud over TCP", () => {
         }), [[0x11, 1], [0x12, 2], [0x12, 3]]);
     });
 
+    it("saves every packet type to CAPTURE_DIR", async () => {
+        await waitFor(() => {
+            return fs.readdirSync(captureDir).length === 3;
+        });
+        const files = fs.readdirSync(captureDir);
+
+        assert.equal(files.filter(f => {
+            return /^2740963018_.+_handshake\.hex$/.test(f);
+        }).length, 1);
+        assert.equal(files.filter(f => {
+            return /^2740963018_.+_schema07(-1)?\.hex$/.test(f); // -1 when both arrived in the same millisecond
+        }).length, 2);
+        const saved = files.find(f => {
+            return f.endsWith("_handshake.hex");
+        });
+        assert.equal(fs.readFileSync(path.join(captureDir, saved), "utf8").trim(), handshake.toString("hex"));
+    });
 });
