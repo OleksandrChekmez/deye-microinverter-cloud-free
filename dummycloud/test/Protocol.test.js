@@ -33,9 +33,22 @@ describe("SUN-5K-SG03LP1-EU DATA packet (schema 0x07)", () => {
         assert.equal(packet.payload.subarray(21, 31).toString("ascii"), "2212218520");
     });
 
-    it("is not decoded yet", () => {
-        // Change this once a decoder for schema 0x07 exists
-        assert.equal(Protocol.parseDataPacketPayload(packet), null);
+    it("is decoded by the single-phase hybrid decoder", () => {
+        const decoded = Protocol.parseDataPacketPayload(packet);
+
+        assert.equal(decoded.schema, "HYBRIDINVERTER_SINGLEPHASE");
+        assert.equal(decoded.inverter_time, "2026-10-23 09:08:33");
+        // Discharging: PV 37 + 45 W, battery 216 W, grid 18 W cover the 313 W load
+        assert.equal(decoded.values.battery_power, 216);
+        assert.equal(decoded.values.battery_state, "discharging");
+        assert.equal(decoded.values.load_power, 313);
+    });
+
+    it("skips historic packets", () => {
+        const historic = Protocol.parsePacket(Buffer.from(buf));
+        historic.payload[0] |= 0x80;
+
+        assert.equal(Protocol.parseDataPacketPayload(historic), null);
     });
 
     it("gets a valid time response", () => {

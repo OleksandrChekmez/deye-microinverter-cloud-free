@@ -1,3 +1,4 @@
+const HybridInverterSinglePhase = require("./HybridInverterSinglePhase");
 const Logger = require("./Logger");
 const {getKeyByValue, toHexByte, truncateToNullTerminator} = require("./util");
 
@@ -80,8 +81,10 @@ class Protocol {
         switch (schema) {
             case Protocol.DATA_PACKET_SCHEMAS.MICROINVERTER:
                 return Protocol.parseDataPacketMicroinverterPayload(packet);
+            case Protocol.DATA_PACKET_SCHEMAS.HYBRIDINVERTER_SINGLEPHASE:
+                return Protocol.parseDataPacketHybridSinglePhasePayload(packet);
             default: {
-                //TODO: parse hybrid, relay and string inverter packets
+                //TODO: parse three-phase hybrid, relay and string inverter packets
                 const schemaName = getKeyByValue(Protocol.DATA_PACKET_SCHEMAS, schema) ?? "unknown";
 
                 Logger.debug(
@@ -92,6 +95,17 @@ class Protocol {
                 return null;
             }
         }
+    }
+
+    static parseDataPacketHybridSinglePhasePayload(packet) {
+        if (!!(packet.payload[0] & 0b10000000)) {
+            // Not seen from hybrids yet. Skip it like the microinverter ones, rather than publish old data as current
+            Logger.debug(`Discarded DATA packet: historic single-phase hybrid packet (payload[0]=${toHexByte(packet.payload[0])})`);
+
+            return null;
+        }
+
+        return HybridInverterSinglePhase.parse(packet.payload);
     }
 
     static parseDataPacketMicroinverterPayload(packet) {
@@ -253,7 +267,7 @@ Protocol.MESSAGE_RESPONSE_TYPES = {
 };
 
 Protocol.DATA_PACKET_SCHEMAS = {
-    HYBRIDINVERTER_SINGLEPHASE: 0x07, // e.g. SUN-5K-SG03LP1-EU; payload is a dump of Modbus register ranges
+    HYBRIDINVERTER_SINGLEPHASE: 0x07, // e.g. SUN-5K-SG03LP1-EU; layout in HybridInverterSinglePhase.js
     MICROINVERTER: 0x08,
     HYBRIDINVERTER: 0x11,
     RELAYMODULE: 0x13

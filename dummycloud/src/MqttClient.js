@@ -65,6 +65,13 @@ class MqttClient {
     }
 
     handleData(data) {
+        if (data.payload.schema === "HYBRIDINVERTER_SINGLEPHASE") {
+            // TODO: publish hybrid inverter values. Until then they're only visible in the debug log
+            Logger.debug("MQTT publishing for single-phase hybrid inverters is not implemented yet");
+
+            return;
+        }
+
         this.ensureAutoconf(data.meta, data.header.loggerSerial.toString(), data.payload.inverter_meta.mppt_count);
         const baseTopic = `${MqttClient.TOPIC_PREFIX}/${data.header.loggerSerial.toString()}`;
 
