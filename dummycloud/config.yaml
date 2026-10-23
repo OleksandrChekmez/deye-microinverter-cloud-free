@@ -1,14 +1,16 @@
-# Home Assistant app definition. The image is built on the Home Assistant machine from the Dockerfile next to this file.
-# Keep "version" equal to package.json's version: a new version is what makes Home Assistant offer the update.
+# Home Assistant app definition. Home Assistant downloads the prebuilt image for its architecture ({arch}), published
+# by .github/workflows/dummycloud-image.yaml when a new version is pushed.
+# Keep "version" equal to package.json's version: a new version is what makes Home Assistant offer the update, and what
+# makes the workflow publish a new image.
 name: Deye Dummycloud
 version: "1.1.0-fork.13"
 slug: deye_dummycloud
 description: Replaces the Solarman cloud for Deye inverter loggers and publishes their data to MQTT, with Home Assistant discovery
 url: https://github.com/OleksandrChekmez/deye-microinverter-cloud-free
+image: ghcr.io/oleksandrchekmez/{arch}-deye-dummycloud
 arch:
   - amd64
   - aarch64
-  - armv7
 startup: application
 boot: auto
 ports:

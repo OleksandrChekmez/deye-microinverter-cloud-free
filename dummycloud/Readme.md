@@ -36,7 +36,7 @@ I'd still keep the firewall rules preventing the inverter from phoning home in p
 
 ### As a Home Assistant app
 
-This folder is also a Home Assistant app (`config.yaml`), built on the Home Assistant machine from the Dockerfile.
+This folder is also a Home Assistant app (`config.yaml`). Home Assistant downloads a prebuilt image (`ghcr.io/oleksandrchekmez/{arch}-deye-dummycloud`, for `amd64` and `aarch64`) instead of building it.
 
 1. In Home Assistant, open the app store (**Settings → Apps**), then the **⋮** menu → **Repositories**, and add
    `https://github.com/OleksandrChekmez/deye-microinverter-cloud-free` (append `#<branch>` to use a branch other than the default one).
@@ -46,7 +46,7 @@ This folder is also a Home Assistant app (`config.yaml`), built on the Home Assi
 With the Mosquitto broker app installed, the app connects to it by itself. Its settings (log level, a different MQTT broker, packet capture) are in the app's **Configuration** tab, and `DOCS.md` is shown in its **Documentation** tab.
 Captured packets go to `/share/deye-dummycloud/captures`. The timezone comes from Home Assistant.
 
-To release an update, raise the version in both `package.json` and `config.yaml` (a test checks they match) and push. Home Assistant then offers the update and rebuilds the image.
+To release an update, raise the version in both `package.json` and `config.yaml` (a test checks they match) and push. The GitHub workflow `.github/workflows/dummycloud-image.yaml` then lints, tests, and publishes the images for that version (a version that already exists isn't published again). Once it's finished, after a few minutes, Home Assistant offers the update. The registry packages must be public, so Home Assistant can download them without logging in.
 
 ### With Docker
 

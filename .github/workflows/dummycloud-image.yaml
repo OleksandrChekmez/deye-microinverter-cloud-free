@@ -1,0 +1,107 @@
+# Builds the dummycloud's Docker images for the Home Assistant app and publishes them to GitHub's container registry,
+# so Home Assistant downloads them instead of building on the Home Assistant machine.
+#   ghcr.io/<owner>/amd64-deye-dummycloud:<version>    ghcr.io/<owner>/aarch64-deye-dummycloud:<version>
+# The version comes from dummycloud/config.yaml. A version that's already published is not built again, so a push
+# without a version bump never changes an image Home Assistant may already have installed.
+name: Dummycloud image
+
+on:
+  push:
+    branches:
+      - master
+      - hybrid-sg03lp1
+    paths:
+      - "dummycloud/**"
+      - ".github/workflows/dummycloud-image.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dummycloud
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: Read the version from config.yaml
+        id: version
+        run: |
+          version=$(sed -n 's/^version: "\(.*\)"$/\1/p' config.yaml)
+          if [ -z "$version" ]; then echo "No version in config.yaml"; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Image ${{ matrix.arch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name
+        # The registry needs lowercase names
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.arch }}-deye-dummycloud" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether this version is already published
+        id: published
+        run: |
+          if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
+            echo "$IMAGE:$VERSION already exists; raise the version in config.yaml and package.json to publish changes"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.published.outputs.exists == 'false' && matrix.arch != 'amd64'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.published.outputs.exists == 'false'
+
+      - uses: docker/build-push-action@v6
+        if: steps.published.outputs.exists == 'false'
+        with:
+          context: dummycloud
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: false
+          build-args: |
+            BUILD_VERSION=${{ env.VERSION }}
+            BUILD_ARCH=${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:latest
