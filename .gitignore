@@ -1,1 +1,3 @@
 /dummycloud/node_modules/
+/dummycloud/.idea
+/dummycloud/compose.yaml
