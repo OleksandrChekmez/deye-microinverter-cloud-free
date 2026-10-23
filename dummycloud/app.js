@@ -18,6 +18,14 @@ async function main() {
     mqttClient.initialize();
 }
 
+// Node doesn't stop on SIGTERM when it runs as the container's first process (no init), so docker stop would wait 10 s
+for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.on(signal, () => {
+        Logger.info(`Received ${signal}, stopping`);
+        process.exit(0);
+    });
+}
+
 main().catch(err => {
     Logger.error("Failed to start", err);
     process.exit(1);
