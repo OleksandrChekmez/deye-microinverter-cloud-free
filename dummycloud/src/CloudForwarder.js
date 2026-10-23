@@ -1,5 +1,6 @@
 const Logger = require("./Logger");
 const net = require("net");
+const PacketSplitter = require("./PacketSplitter");
 
 const HEADER_LEN = 11;
 const FOOTER_LEN = 2;
@@ -40,7 +41,7 @@ class CloudForwarder {
         this.loggerAddress = loggerAddress;
         this.socket = null;
         this.pending = []; // chunks waiting for the connection
-        this.received = Buffer.alloc(0);
+        this.splitter = new PacketSplitter();
         this.onFrame = null; // optional (frame: Buffer) => void, e.g. for tests
     }
 
@@ -83,7 +84,7 @@ class CloudForwarder {
         Logger.info(`[forward] Connecting to ${this.host}:${this.port} for logger ${this.loggerAddress}`);
         const socket = net.connect({host: this.host, port: this.port});
         this.socket = socket;
-        this.received = Buffer.alloc(0);
+        this.splitter = new PacketSplitter();
 
         socket.setTimeout(CONNECT_TIMEOUT_MS, () => {
             if (socket.connecting) {
@@ -124,26 +125,12 @@ class CloudForwarder {
      * @param {Buffer} data
      */
     handleCloudData(data) {
-        this.received = Buffer.concat([this.received, data]);
+        const {packets, discarded} = this.splitter.push(data);
 
-        while (this.received.length > 0) {
-            if (this.received[0] !== 0xa5) {
-                Logger.info(`[forward] cloud sent non-V5 bytes: ${this.received.toString("hex")}`);
-                this.received = Buffer.alloc(0);
-                return;
-            }
-            if (this.received.length < 3) {
-                return;
-            }
-
-            const frameLength = this.received.readUInt16LE(1) + HEADER_LEN + FOOTER_LEN;
-            if (this.received.length < frameLength) {
-                return;
-            }
-
-            const frame = this.received.subarray(0, frameLength);
-            this.received = this.received.subarray(frameLength);
-
+        for (const bytes of discarded) {
+            Logger.info(`[forward] cloud sent non-V5 bytes: ${bytes.toString("hex")}`);
+        }
+        for (const frame of packets) {
             Logger.info(`[forward] cloud replied: ${CloudForwarder.describe(frame)}`);
             if (this.onFrame) {
                 this.onFrame(frame);

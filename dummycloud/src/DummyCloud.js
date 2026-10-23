@@ -4,6 +4,7 @@ const fs = require("fs");
 const Logger = require("./Logger");
 const net = require("net");
 const packageJson = require("../package.json");
+const PacketSplitter = require("./PacketSplitter");
 const path = require("path");
 const Protocol = require("./Protocol");
 const {toHexByte} = require("./util");
@@ -51,90 +52,29 @@ class DummyCloud {
         const remoteAddress = socket.remoteAddress; // As this is a getter, it may become unavailable
         Logger.info(`New connection from ${remoteAddress}`);
 
-        const forwarder = this.forwardTo ? new CloudForwarder(this.forwardTo, remoteAddress) : null;
-        let replyCount = 0; // the reply's sequence number counts replies per connection, like the real cloud
+        const connection = {
+            remoteAddress: remoteAddress,
+            socket: socket,
+            forwarder: this.forwardTo ? new CloudForwarder(this.forwardTo, remoteAddress) : null,
+            replyCount: 0 // the reply's sequence number counts replies per connection, like the real cloud
+        };
+        // TCP doesn't keep packet boundaries: one read can hold part of a packet, or several packets
+        const splitter = new PacketSplitter();
 
         socket.on("data", (data) => {
             Logger.trace(new Date().toISOString(), `Data received from client ${remoteAddress}: ${data.toString()}`);
             Logger.trace(new Date().toISOString(), `Data ${remoteAddress}:`, data.toString("hex"));
 
-            if (forwarder) {
-                Logger.info(`[forward] logger sent: ${CloudForwarder.summarize(data)}`);
-                forwarder.forward(data);
+            if (connection.forwarder) {
+                connection.forwarder.forward(data);
             }
 
-            try {
-                const packet = Protocol.parsePacket(data);
-                let response;
-
-                switch (packet.header.type) {
-                    case Protocol.MESSAGE_REQUEST_TYPES.HEARTBEAT: {
-                        response = Protocol.buildTimeResponse(packet, ++replyCount);
-                        break;
-                    }
-                    case Protocol.MESSAGE_REQUEST_TYPES.WIFI: {
-                        /*
-                            There isn't much of interest in this packet
-                            It can contain the SSID or the Logger SN
-                            + Some counters increasing every second
-                            
-                            On connect, it also can contain the signal strength
-                            But that's about it
-                            
-                            The signal strength over time would've been interesting, but it only gets sent on connect
-                            With that, it's close to useless
-                         */
-                        response = Protocol.buildTimeResponse(packet, ++replyCount);
-                        break;
-                    }
-                    case Protocol.MESSAGE_REQUEST_TYPES.HANDSHAKE: {
-                        const data = Protocol.parseLoggerPacketPayload(packet);
-
-                        Logger.debug(`Handshake packet data from ${remoteAddress}`, data);
-                        this.emitHandshake({
-                            header: packet.header,
-                            payload: data
-                        });
-
-                        response = Protocol.buildTimeResponse(packet, ++replyCount);
-                        break;
-                    }
-                    case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
-                        this.capturePacket(data, packet);
-
-                        // Returns null for packets it can't decode, and logs the reason itself
-                        const decoded = Protocol.parseDataPacketPayload(packet);
-
-                        if (decoded) {
-                            Logger.debug(`DATA packet data from ${remoteAddress}`, decoded);
-                            this.emitData({
-                                header: packet.header,
-                                payload: decoded,
-                                meta: {
-                                    remoteAddress: remoteAddress
-                                }
-                            });
-                        }
-
-                        response = Protocol.buildTimeResponse(packet, ++replyCount);
-                        break;
-                    }
-
-                    default: {
-                        response = Protocol.buildTimeResponse(packet, ++replyCount);
-                    }
-                }
-
-                if (response) {
-                    Logger.trace("Response", response.toString("hex"));
-
-                    socket.write(response);
-                    if (forwarder) {
-                        forwarder.logOwnReply(response);
-                    }
-                }
-            } catch (e) {
-                Logger.error(`Error while parsing packet from ${remoteAddress}`, e);
+            const {packets, discarded} = splitter.push(data);
+            for (const bytes of discarded) {
+                Logger.warn(`Skipped ${bytes.length} bytes from ${remoteAddress} that aren't a packet: ${bytes.toString("hex")}`);
+            }
+            for (const raw of packets) {
+                this.handlePacket(raw, connection);
             }
         });
 
@@ -144,14 +84,92 @@ class DummyCloud {
 
         socket.on("close", function() {
             Logger.info(`Closing connection with ${remoteAddress}`);
-            if (forwarder) {
-                forwarder.close();
+            if (connection.forwarder) {
+                connection.forwarder.close();
             }
         });
 
         socket.on("error", function(err) {
             Logger.error(`Error on dummycloud socket for ${remoteAddress}`, err);
         });
+    }
+
+    /**
+     * Decodes one complete packet and answers it
+     *
+     * @private
+     * @param {Buffer} raw
+     * @param {{remoteAddress: string, socket: net.Socket, forwarder: CloudForwarder|null, replyCount: number}} connection
+     */
+    handlePacket(raw, connection) {
+        const remoteAddress = connection.remoteAddress;
+
+        if (connection.forwarder) {
+            Logger.info(`[forward] logger sent: ${CloudForwarder.summarize(raw)}`);
+        }
+
+        try {
+            const packet = Protocol.parsePacket(raw);
+
+            switch (packet.header.type) {
+                case Protocol.MESSAGE_REQUEST_TYPES.WIFI: {
+                    /*
+                        There isn't much of interest in this packet
+                        It can contain the SSID or the Logger SN
+                        + Some counters increasing every second
+
+                        On connect, it also can contain the signal strength
+                        But that's about it
+
+                        The signal strength over time would've been interesting, but it only gets sent on connect
+                        With that, it's close to useless
+                     */
+                    break;
+                }
+                case Protocol.MESSAGE_REQUEST_TYPES.HANDSHAKE: {
+                    const data = Protocol.parseLoggerPacketPayload(packet);
+
+                    Logger.debug(`Handshake packet data from ${remoteAddress}`, data);
+                    this.emitHandshake({
+                        header: packet.header,
+                        payload: data
+                    });
+                    break;
+                }
+                case Protocol.MESSAGE_REQUEST_TYPES.DATA: {
+                    this.capturePacket(raw, packet);
+
+                    // Returns null for packets it can't decode, and logs the reason itself
+                    const decoded = Protocol.parseDataPacketPayload(packet);
+
+                    if (decoded) {
+                        Logger.debug(`DATA packet data from ${remoteAddress}`, decoded);
+                        this.emitData({
+                            header: packet.header,
+                            payload: decoded,
+                            meta: {
+                                remoteAddress: remoteAddress
+                            }
+                        });
+                    }
+                    break;
+                }
+                default: {
+                    // HEARTBEAT and unknown types carry nothing to decode
+                }
+            }
+
+            // Every packet gets answered, the logger expects it. The reply also gives it the current time.
+            const response = Protocol.buildTimeResponse(packet, ++connection.replyCount);
+            Logger.trace("Response", response.toString("hex"));
+
+            connection.socket.write(response);
+            if (connection.forwarder) {
+                connection.forwarder.logOwnReply(response);
+            }
+        } catch (e) {
+            Logger.error(`Error while handling packet from ${remoteAddress}`, e);
+        }
     }
 
     /**
